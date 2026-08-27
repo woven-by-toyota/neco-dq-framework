@@ -29,7 +29,7 @@ dependencies = [
   "jinja2>=3.1",
   "great_expectations>=1.9.0",
   "asteval>=0.9.30",
-  "pandas>=2.0,<3.0",  # Pin to pandas 2.x to avoid PySpark compatibility issues
+  "pandas>=2.0,<4.0",  # Pin to pandas 2.x to avoid PySpark compatibility issues
 ]
 
 [project.urls]
