@@ -1,0 +1,59 @@
+default_stages: [pre-commit, commit-msg]
+default_install_hook_types: [pre-commit, commit-msg]
+fail_fast: false
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.20
+    hooks:
+      - id: ruff
+        args: [--fix]
+        types_or: [python, pyi]
+      - id: ruff-format
+        types_or: [python, pyi]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: \.md$
+      - id: end-of-file-fixer
+        exclude: \.md$
+      - id: check-yaml
+        args: [--unsafe]
+        exclude: ^neco_dq/config/.*template\.yaml$
+      - id: check-toml
+      - id: check-json
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: detect-private-key
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: [--baseline, .secrets.baseline]
+        exclude: uv\.lock$
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.8.6
+    hooks:
+      - id: bandit
+        args: [-c, pyproject.toml]
+        additional_dependencies: ["bandit[toml]"]
+        exclude: ^tests/
+
+  - repo: local
+    hooks:
+      - id: conventional-commit
+        name: Conventional Commit Message
+        entry: .github/conventional-commit
+        language: python
+        stages: [commit-msg]
+
+ci:
+  autofix_prs: true
+  autofix_commit_msg: "style: auto-fix by pre-commit hooks"
+  autoupdate_schedule: weekly

@@ -1,0 +1,79 @@
+silver:
+  tables:
+{% for t in tables %}
+    - catalog: "{{ t.catalog }}"
+      schema: "{{ t.schema }}"
+      table: "{{ t.table }}"
+
+      checks:
+
+        idempotency:
+          key_column:
+          {% if t.pk_id is string %}
+            {{ t.pk_id }}
+          {% else %}
+          {% for c in t.pk_id %}
+            - {{ c }}
+          {% endfor %}
+          {% endif %}
+          enabled: true
+          blocking: true
+
+{% if t.status_column is defined %}
+        status_transition:
+          key_column:
+          {% if t.pk_id is string %}
+            {{ t.pk_id }}
+          {% else %}
+            {{ t.pk_id[0] }}
+          {% endif %}
+          status_column: "{{ t.status_column }}"
+          timestamp_column: "{{ t.timestamp_column }}"
+          allowed_flow:
+            - CREATED
+            - AUTHORIZED
+            - CAPTURED
+            - FAILED
+            - REFUNDED
+          enabled: true
+          blocking: true
+{% endif %}
+{% endfor %}
+
+{% for d in data_to_save %}
+  data_to_save:
+    - table: "{{ d.dq_history_table }}"
+      write_mode: append
+      alerts: false
+      columns_to_save:
+        - test_suite
+        - catalog
+        - schema
+        - table
+        - column
+        - run_timestamp
+        - passed
+        - status
+        - check_name
+        - severity
+        - details
+        - blocking
+
+    - table: "{{ d.dq_alerts_table }}"
+      write_mode: append
+      alerts: true
+      columns_to_save:
+        - test_suite
+        - catalog
+        - schema
+        - table
+        - column
+        - run_timestamp
+        - passed
+        - status
+        - check_name
+        - severity
+        - details
+        - blocking
+        - alert_description
+{% endfor %}

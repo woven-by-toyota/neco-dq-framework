@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or discussion
+    url: https://github.com/woven-by-toyota/neco-dq-framework/discussions
+    about: For usage questions and general discussion, open a discussion instead of an issue.
+  - name: Documentation
+    url: https://github.com/woven-by-toyota/neco-dq-framework/tree/main/docs
+    about: Check the docs before filing, the answer may already be there.

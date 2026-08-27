@@ -1,0 +1,6 @@
+id,name,category,value,status
+1,Alice,A,100,active
+2,Bob,A,200,active
+3,Charlie,B,150,inactive
+4,Diana,B,250,active
+5,Eve,A,300,inactive

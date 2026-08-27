@@ -1,0 +1,45 @@
+name: Feature request
+description: Suggest a new check, metric, or capability
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to validate or do that you can't today?
+      placeholder: I need to check that... but no existing check covers it.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should it do? If it's a new check, sketch the YAML config you'd expect to write.
+      placeholder: |
+        A new check `my_check` that takes:
+        ```yaml
+        my_check:
+          column: ...
+        ```
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which area
+      options:
+        - Bronze suite
+        - Silver suite
+        - Gold suite
+        - Profiling
+        - Great Expectations
+        - compare_metric / metrics
+        - Policy / reporting
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds you've tried or other approaches you thought about.

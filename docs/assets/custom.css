@@ -1,0 +1,302 @@
+/* ============================================================
+   BRAND COLORS
+   ============================================================ */
+
+/* Dark mode (slate) */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color:        #eb0a1e;
+  --md-primary-fg-color--light: #ff3c4b;
+  --md-primary-fg-color--dark:  #b4000f;
+  --md-primary-bg-color:        #ffffff;
+  --md-accent-fg-color:         #eb0a1e;
+
+  --md-default-bg-color:        #1a1a1a;
+  --md-default-bg-color--light: #222222;
+  --md-default-fg-color:        #efefef;
+  --md-default-fg-color--light: #888b8d;
+  --md-default-fg-color--lighter: #444444;
+
+  --md-code-bg-color:           #242424;
+  --md-code-fg-color:           #efefef;
+
+  --color-black: #000;
+  --color-accent: #eb0a1e;
+  --color-neutral-white: #efefef;
+  --color-neutral-gray: #f5f5f5;
+  --color-neutral-dark-gray: #888b8d;
+}
+
+/* Light mode (default) */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color:        #eb0a1e;
+  --md-primary-fg-color--light: #ff3c4b;
+  --md-primary-fg-color--dark:  #b4000f;
+  --md-primary-bg-color:        #ffffff;
+  --md-accent-fg-color:         #eb0a1e;
+
+  --md-default-bg-color:        #ffffff;
+  --md-default-bg-color--light: #f5f5f5;
+  --md-default-fg-color:        #000000;
+  --md-default-fg-color--light: #888b8d;
+  --md-default-fg-color--lighter: #cccccc;
+
+  --md-code-bg-color:           #f5f5f5;
+  --md-code-fg-color:           #000000;
+
+  --color-black: #000;
+  --color-accent: #eb0a1e;
+  --color-neutral-white: #efefef;
+  --color-neutral-gray: #f5f5f5;
+  --color-neutral-dark-gray: #888b8d;
+}
+
+/* ============================================================
+   SCROLLBAR
+   ============================================================ */
+
+.md-sidebar__scrollwrap::-webkit-scrollbar,
+.md-sidebar__inner::-webkit-scrollbar,
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.md-sidebar__scrollwrap::-webkit-scrollbar-track,
+.md-sidebar__inner::-webkit-scrollbar-track,
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.md-sidebar__scrollwrap::-webkit-scrollbar-thumb,
+.md-sidebar__inner::-webkit-scrollbar-thumb,
+::-webkit-scrollbar-thumb {
+  background: var(--md-primary-fg-color);
+  border-radius: 999px;
+}
+
+.md-sidebar__scrollwrap::-webkit-scrollbar-thumb:hover,
+.md-sidebar__inner::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:hover {
+  background: var(--md-primary-fg-color);
+  opacity: 0.8;
+}
+
+/* ============================================================
+   LAYOUT
+   ============================================================ */
+
+/* Hide the table of contents (right sidebar) on all pages */
+.md-sidebar--secondary {
+  display: none;
+}
+
+/* Wider content area */
+.md-content {
+  max-width: 1100px;
+}
+
+@media screen and (min-width: 76.25em) {
+  .md-content p {
+    text-align: justify;
+  }
+}
+
+/* ============================================================
+   NAVBAR
+   ============================================================ */
+
+/* Navbar background — dark gray */
+.md-header {
+  background-color: #1c1c1c;
+  color: #efefef;
+}
+
+[data-md-color-scheme="default"] .md-header {
+  background-color: #2c2c2c;
+  color: #efefef;
+}
+
+/* Hide logo from top navbar */
+.md-header__button.md-logo {
+  display: none;
+}
+
+/* ============================================================
+   FOOTER
+   ============================================================ */
+
+.md-footer-meta__inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* ============================================================
+   SIDEBAR — active indicator uses primary (teal) not accent (cyan)
+   ============================================================ */
+
+.md-nav__link--active,
+.md-nav__link:hover {
+  color: var(--md-primary-fg-color) !important;
+}
+
+.md-nav__item--active > .md-nav__link {
+  color: var(--md-primary-fg-color) !important;
+}
+
+/* ============================================================
+   SIDEBAR — section titles bold + uppercase
+   ============================================================ */
+
+.md-nav--primary > .md-nav__list > .md-nav__item > .md-nav__link {
+  font-weight: 700;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--md-default-fg-color);
+}
+
+/* ============================================================
+   SIDEBAR — submenu items indented + smaller font
+   ============================================================ */
+
+.md-nav__item .md-nav .md-nav__link {
+  padding-left: 1.5rem;
+  font-size: 0.62rem;
+}
+
+/* ============================================================
+   PAGE METADATA (read-time badge + subtitle)
+   ============================================================ */
+
+.read-time {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--md-primary-fg-color);
+  background: color-mix(in srgb, var(--md-primary-fg-color) 12%, transparent);
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  margin-bottom: 0.5rem;
+}
+
+.page-subtitle {
+  display: block;
+  font-size: 1.1rem;
+  color: var(--md-default-fg-color--light);
+  margin-bottom: 0.25rem;
+  font-style: italic;
+}
+
+/* ============================================================
+   PAGE INFO BOX
+   ============================================================ */
+
+.page-info {
+  background: var(--md-code-bg-color);
+  border-left: 4px solid var(--md-primary-fg-color);
+  border-radius: 4px;
+  padding: 1rem 1.25rem;
+  margin: 1.5rem 0;
+}
+
+.page-info__title {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  color: var(--md-primary-fg-color);
+}
+
+/* ============================================================
+   SECTION LABEL
+   ============================================================ */
+
+.qa-section-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--md-default-fg-color--light);
+  margin: 2rem 0 0.75rem;
+}
+
+/* ============================================================
+   CARD GRID
+   ============================================================ */
+
+.qa-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.qa-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--md-primary-fg-color);
+  background: var(--md-primary-fg-color);
+  color: var(--md-primary-bg-color) !important;
+  text-decoration: none !important;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.qa-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--md-primary-fg-color) 25%, transparent);
+}
+
+.qa-card--secondary {
+  background: var(--md-code-bg-color);
+  border-color: var(--md-default-fg-color--lighter);
+  color: var(--md-default-fg-color) !important;
+}
+
+.qa-card--secondary:hover {
+  border-color: var(--md-primary-fg-color);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--md-primary-fg-color) 15%, transparent);
+}
+
+/* Data layer colored cards */
+.qa-card--bronze {
+  background: var(--md-code-bg-color);
+  border-color: #CD7F32;
+  color: var(--md-default-fg-color) !important;
+}
+.qa-card--bronze:hover { border-color: #CD7F32; box-shadow: 0 4px 12px #CD7F3230; }
+.qa-card--bronze .qa-card__title { color: #CD7F32; }
+
+.qa-card--silver {
+  background: var(--md-code-bg-color);
+  border-color: #A8A9AD;
+  color: var(--md-default-fg-color) !important;
+}
+.qa-card--silver:hover { border-color: #A8A9AD; box-shadow: 0 4px 12px #A8A9AD30; }
+.qa-card--silver .qa-card__title { color: #A8A9AD; }
+
+.qa-card--gold {
+  background: var(--md-code-bg-color);
+  border-color: #C9A84C;
+  color: var(--md-default-fg-color) !important;
+}
+.qa-card--gold:hover { border-color: #C9A84C; box-shadow: 0 4px 12px #C9A84C30; }
+.qa-card--gold .qa-card__title { color: #C9A84C; }
+
+.qa-card__title {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.qa-card__desc {
+  font-size: 0.8rem;
+  opacity: 0.85;
+  line-height: 1.4;
+}

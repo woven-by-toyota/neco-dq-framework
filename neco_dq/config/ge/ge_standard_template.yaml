@@ -1,0 +1,78 @@
+great_expectations:
+  tables:
+{% for t in tables %}
+    - catalog: "{{ t.catalog }}"
+      schema: "{{ t.schema }}"
+      table: "{{ t.table }}"
+      checks:
+        _dataset:
+          min_rows: 1
+          severity: error
+          blocking: true
+
+{% if t.pk_id is string %}
+        {{ t.pk_id }}:
+          dtype:
+            values: ["str"]
+            severity: error
+            blocking: true
+          nullable:
+            enabled: false
+          unique:
+            enabled: true
+            blocking: true
+{% else %}
+        {{ t.pk_id[0] }}:
+          dtype:
+            values: ["str"]
+            severity: error
+            blocking: true
+          nullable:
+            enabled: false
+          unique:
+            enabled: true
+            blocking: true
+            column_list: {{ t.pk_id | tojson }}
+{% endif %}
+{% endfor %}
+
+{% for d in data_to_save %}
+  data_to_save:
+
+    - table: "{{ d.dq_history_table }}"
+      write_mode: append
+      alerts: false
+      merge_schema: true
+      columns_to_save:
+        - test_suite
+        - catalog
+        - schema
+        - table
+        - column
+        - run_timestamp
+        - passed
+        - status
+        - check_name
+        - severity
+        - details
+        - blocking
+
+    - table: "{{ d.dq_alerts_table }}"
+      write_mode: append
+      alerts: true
+      merge_schema: true
+      columns_to_save:
+        - test_suite
+        - catalog
+        - schema
+        - table
+        - column
+        - run_timestamp
+        - passed
+        - status
+        - check_name
+        - severity
+        - details
+        - blocking
+        - alert_description
+{% endfor %}

@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Least-privilege: CI only reads the repo. No job writes back.
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install lint dependencies
+        run: uv sync --extra lint --frozen
+
+      - name: Ruff check
+        run: uv run ruff check neco_dq/ --output-format=github
+
+      - name: Ruff format check
+        run: uv run ruff format --check neco_dq/
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: lint
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --extra dev --frozen
+
+      - name: Set up Java (required for PySpark)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Run tests
+        run: uv run python -m pytest tests/ -v --tb=short
+
+  build:
+    name: Build wheel
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      # No `uv sync`: `uv build` builds the wheel in an isolated environment
+      # and doesn't need dev/test dependencies installed.
+      - name: Build wheel
+        run: uv build --wheel
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheel
+          path: dist/*.whl
+          retention-days: 7

@@ -1,0 +1,56 @@
+name: Bug report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please fill in what you can.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Describe the bug and what you expected instead.
+      placeholder: A check reported a failure even though the data looked correct...
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: How can we reproduce it? Include the relevant YAML config and the `run_dq` call if you can.
+      placeholder: |
+        1. Config used (redact anything sensitive):
+        2. Called run_dq(...) with:
+        3. Result / error:
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: neco-dq-framework version
+      description: Output of `import neco_dq; print(neco_dq.__version__)`
+      placeholder: "1.2.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Where did it run
+      options:
+        - Databricks (Unity Catalog)
+        - Local PySpark (development / tests)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Databricks Runtime / Python version
+      placeholder: "DBR 15.4 LTS, Python 3.11"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or traceback
+      description: Paste any relevant output. Do not include data values or secrets.
+      render: text

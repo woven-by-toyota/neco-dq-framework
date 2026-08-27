@@ -1,0 +1,28 @@
+version = 1
+
+# Bulk licensing annotations for files that cannot (or should not) carry an
+# inline SPDX header — docs, config, lockfiles, assets, and project metadata.
+# Python source files carry their own per-file SPDX headers instead.
+# See the REUSE specification: https://reuse.software/spec/
+
+[[annotations]]
+path = [
+    "docs/**",
+    "neco_dq/config/**/*.yaml",
+    ".github/**",
+    "*.md",
+    "*.yml",
+    "*.yaml",
+    "*.toml",
+    "*.lock",
+    "*.sh",
+    "Makefile",
+    ".gitignore",
+    ".python-version",
+    ".env.example",
+    ".pre-commit-config.yaml",
+    ".secrets.baseline",
+    "NOTICE",
+]
+SPDX-FileCopyrightText = "2026 Toyota Motor Corporation"
+SPDX-License-Identifier = "Apache-2.0"

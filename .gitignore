@@ -1,0 +1,50 @@
+# Spark
+spark-warehouse/
+
+# Test
+.venv-test/
+htmlcov/
+reports/
+.allure/
+.coverage
+.pytest_cache/
+.allure-results/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Ruff
+.ruff_cache/
+
+# MkDocs generated site
+site/
+neco_dq/site/
+
+# Secrets
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Claude (local working files, not for public repo)
+.claude/
+CLAUDE.md
+
+# Local scripts (not for CI)
+/scripts/
+allurectl
+
+# UI (not yet released)
+neco_dq_ui/
+
+# UI virtualenv
+.venv-ui/

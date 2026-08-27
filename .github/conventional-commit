@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""Validates that a commit message follows the Conventional Commits spec.
+
+Format: <type>[(<scope>)][!]: <description>
+
+Valid types: build, ci, docs, feat, fix, refactor, revert, style, test, chore
+Scope is optional. Breaking changes can be flagged with ! after the type/scope.
+Description must start with a lowercase letter.
+"""
+
+import re
+import sys
+from pathlib import Path
+
+VALID_TYPES = {
+    "build",
+    "ci",
+    "chore",
+    "docs",
+    "feat",
+    "fix",
+    "refactor",
+    "revert",
+    "style",
+    "test",
+}
+
+PATTERN = re.compile(
+    r"^(?P<type>[a-z]+)(\((?P<scope>[^)]+)\))?(?P<breaking>!)?: (?P<desc>.+)",
+    re.MULTILINE,
+)
+
+MERGE_PATTERN = re.compile(r"^Merge (branch|pull request|remote-tracking branch)")
+
+
+def main() -> int:
+    commit_msg_file = Path(sys.argv[1])
+    message = commit_msg_file.read_text().strip()
+
+    first_line = message.splitlines()[0] if message else ""
+
+    if MERGE_PATTERN.match(first_line):
+        return 0
+
+    match = PATTERN.match(first_line)
+    if not match:
+        print(f"Invalid commit message: {first_line!r}")  # noqa: T201
+        print("Expected format: <type>[(<scope>)][!]: <description>")  # noqa: T201
+        print(f"Valid types: {', '.join(sorted(VALID_TYPES))}")  # noqa: T201
+        return 1
+
+    commit_type = match.group("type")
+    if commit_type not in VALID_TYPES:
+        print(f"Invalid commit type: {commit_type!r}")  # noqa: T201
+        print(f"Valid types: {', '.join(sorted(VALID_TYPES))}")  # noqa: T201
+        return 1
+
+    desc = match.group("desc")
+    if desc[0].isupper():
+        print(f"Description must start with a lowercase letter: {desc!r}")  # noqa: T201
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
