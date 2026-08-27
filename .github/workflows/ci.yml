@@ -58,7 +58,7 @@ jobs:
         run: uv sync --extra dev --frozen
 
       - name: Set up Java (required for PySpark)
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
