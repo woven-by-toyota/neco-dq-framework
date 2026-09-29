@@ -1,6 +1,6 @@
 # Profiles
 
-Multi-environment configuration using profiles.
+Adapt one data quality configuration to multiple environments (dev, staging, prod) without duplicating files.
 
 ---
 
