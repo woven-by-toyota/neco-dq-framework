@@ -23,13 +23,13 @@ compare_metric:
   blocking: true
   name: my_metric_check        # Optional: descriptive name
 
-  metric:                       # REQUIRED: What to measure (observed)
+  observed:                     # REQUIRED: What to measure
     type: <metric_type>
     # ... metric-specific parameters
 
   # CHOOSE ONE: static value OR dynamic expected
   value: 100                    # Option 1: Compare to static value
-  expected_from:                # Option 2: Compare to dynamic value
+  expected:                     # Option 2: Compare to dynamic value
     type: <resolver_type>
     # ... resolver-specific parameters
 
@@ -38,23 +38,23 @@ compare_metric:
 ```
 
 !!! info "Key Aliases"
-    The following keys are interchangeable:
+    This reference uses `observed` and `expected`. The following legacy aliases are still accepted:
 
-    - `metric` **or** `observed`: defines the observed value
-    - `expected_from` **or** `expected`: defines the dynamic expected value
+    - `observed` **or** `metric`: defines the observed value
+    - `expected` **or** `expected_from`: defines the dynamic expected value
 
 ---
 
 ## Observed Metrics
 
-The `metric` section defines what value to compute from your data.
+The `observed` section defines what value to compute from your data.
 
 ### count
 
 Counts rows in the DataFrame.
 
 ```yaml
-metric:
+observed:
   type: count
 ```
 
@@ -70,7 +70,7 @@ Applies a Spark aggregation function.
 | `group_by` | No | Columns for grouping |
 
 ```yaml
-metric:
+observed:
   type: aggregate
   column: amount
   function: sum
@@ -90,7 +90,7 @@ Extracts a single column value (or grouped values).
 | `group_by` | No | Columns for grouping |
 
 ```yaml
-metric:
+observed:
   type: column_value
   column: total_responses
   group_by:
@@ -103,7 +103,7 @@ metric:
 Executes a raw SQL query.
 
 ```yaml
-metric:
+observed:
   type: sql
   query: "SELECT COUNT(*) FROM {catalog}.{schema}.{table} WHERE status = 'active'"
 ```
@@ -116,7 +116,7 @@ metric:
 Counts elements in an array column.
 
 ```yaml
-metric:
+observed:
   type: size_array
   column: items
   group_by:
@@ -136,7 +136,7 @@ Sums a specific field within array elements.
 | `group_by` | No | Columns for grouping |
 
 ```yaml
-metric:
+observed:
   type: sum_array_field
   column: choices
   field: choice_pct
@@ -176,7 +176,7 @@ Computes statistical measures from array field values.
 **Example: Weighted Mean**
 
 ```yaml
-metric:
+observed:
   type: array_stats
   column: rating_levels
   field: rating_value
@@ -190,7 +190,7 @@ metric:
 **Example: Median with Method**
 
 ```yaml
-metric:
+observed:
   type: array_stats
   column: rating_levels
   field: rating_value
@@ -204,7 +204,7 @@ metric:
 **Example: Nested Array Stats**
 
 ```yaml
-metric:
+observed:
   type: array_stats
   column: items
   path: ranks                    # Navigate to nested 'ranks' array
@@ -246,7 +246,7 @@ Computes Kendall's W coefficient of concordance for ranking data.
 **Example: Basic Kendall W**
 
 ```yaml
-metric:
+observed:
   type: kendall_w
   column: items
   rank_sum_field: mean_rank
@@ -259,7 +259,7 @@ metric:
 **Example: With Label Validation**
 
 ```yaml
-metric:
+observed:
   type: kendall_w
   column: items
   label_column: kendall_w_label    # Validate against expected label
@@ -288,7 +288,7 @@ Computes Borda Count scores for ranking data.
 | `group_by` | No | Columns for grouping |
 
 ```yaml
-metric:
+observed:
   type: borda_count
   column: items
   ranks_field: ranks
@@ -305,7 +305,7 @@ metric:
 
 ## Expected Resolvers
 
-The `expected_from` section defines where to get the expected value.
+The `expected` section defines where to get the expected value.
 
 ### static (using `value`)
 
@@ -331,7 +331,7 @@ Compute aggregation from another table.
 | `group_by` | No | Columns for grouping |
 
 ```yaml
-expected_from:
+expected:
   type: aggregate
   catalog: my_catalog
   schema: my_schema
@@ -348,7 +348,7 @@ expected_from:
 Execute a raw SQL query.
 
 ```yaml
-expected_from:
+expected:
   type: sql
   query: "SELECT COUNT(*) FROM catalog.schema.table WHERE status = 'active'"
 ```
@@ -367,7 +367,7 @@ Extract column value from a table.
 | `group_by` | No | Columns for grouping |
 
 ```yaml
-expected_from:
+expected:
   type: column_value
   catalog: my_catalog
   schema: my_schema
@@ -396,7 +396,7 @@ Extract values from array field elements.
 *Use either `field` or `fields`, not both.
 
 ```yaml
-expected_from:
+expected:
   type: array_field_value
   catalog: my_catalog
   schema: my_schema
@@ -449,14 +449,14 @@ Use `group_by` to perform row-level comparisons across grouped data.
 
 **Important:** When using `group_by`:
 
-- Both `metric` and `expected_from` must have matching `group_by` columns
+- Both `observed` and `expected` must have matching `group_by` columns
 - Group keys are compared as string tuples
 - All groups must pass for the check to succeed
 
 ```yaml
 compare_metric:
   enabled: true
-  metric:
+  observed:
     type: aggregate
     column: total
     function: sum
@@ -464,7 +464,7 @@ compare_metric:
       - order_id
       - product_id
 
-  expected_from:
+  expected:
     type: column_value
     catalog: my_catalog
     schema: my_schema
@@ -491,7 +491,7 @@ compare_metric:
   severity: critical
   blocking: true
 
-  metric:
+  observed:
     type: aggregate
     column: amount
     function: sum
@@ -510,10 +510,10 @@ compare_metric:
   severity: error
   name: responses_count_match
 
-  observed:                      # Using 'observed' alias for 'metric'
+  observed:
     type: count
 
-  expected:                      # Using 'expected' alias for 'expected_from'
+  expected:
     type: aggregate
     catalog: my_catalog
     schema: silver
@@ -535,7 +535,7 @@ compare_metric:
   severity: error
   name: revenue_per_region
 
-  observed:                      # Using 'observed' alias
+  observed:
     type: aggregate
     column: revenue
     function: sum
@@ -543,7 +543,7 @@ compare_metric:
       - region
       - quarter
 
-  expected:                      # Using 'expected' alias
+  expected:
     type: column_value
     catalog: my_catalog
     schema: gold
@@ -566,7 +566,7 @@ compare_metric:
   severity: error
   name: percentage_sum_100
 
-  metric:
+  observed:
     type: sum_array_field
     column: choices
     field: choice_pct
@@ -590,7 +590,7 @@ compare_metric:
   severity: error
   name: rating_mean
 
-  metric:
+  observed:
     type: array_stats
     column: rating_levels
     field: rating_value
@@ -600,7 +600,7 @@ compare_metric:
       - order_id
       - product_id
 
-  expected_from:
+  expected:
     type: column_value
     catalog: my_catalog
     schema: gold
@@ -624,7 +624,7 @@ compare_metric:
   severity: error
   name: kendall_consensus
 
-  metric:
+  observed:
     type: kendall_w
     column: items
     rank_sum_field: mean_rank
@@ -639,7 +639,7 @@ compare_metric:
       - order_id
       - product_id
 
-  expected_from:
+  expected:
     type: column_value
     catalog: my_catalog
     schema: gold
@@ -663,7 +663,7 @@ compare_metric:
   severity: error
   name: verify_borda_count
 
-  metric:
+  observed:
     type: borda_count
     column: items
     ranks_field: ranks
@@ -675,7 +675,7 @@ compare_metric:
       - order_id
       - product_id
 
-  expected_from:
+  expected:
     type: array_field_value
     catalog: my_catalog
     schema: gold
@@ -700,10 +700,10 @@ compare_metric:
   severity: warning
   name: active_users_count
 
-  metric:
+  observed:
     type: count
 
-  expected_from:
+  expected:
     type: sql
     query: |
       SELECT COUNT(DISTINCT user_id)

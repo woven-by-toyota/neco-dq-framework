@@ -4,6 +4,10 @@ repo_url: https://github.com/woven-by-toyota/neco-dq-framework
 repo_name: woven-by-toyota/neco-dq-framework
 docs_dir: docs
 
+# Pages intentionally kept out of the nav (still built and reachable by direct link)
+not_in_nav: |
+  /configuration/template-system.md
+
 theme:
   name: material
   logo: assets/logo.svg
@@ -83,10 +87,9 @@ nav:
       - Database Setup: configuration/database-setup.md
       - Modular Configuration: configuration/modular-config.md
       - Single-File Config: configuration/single-file.md
-      - Multi-Environment (Profiles): configuration/profiles.md
+      - Environment Profiles: configuration/profiles.md
       - Failure Policy: configuration/policy.md
-      - Running DQ (run_dq): configuration/run-dq-api.md
-      - Template System (Planned): configuration/template-system.md
+      - Running DQ: configuration/run-dq-api.md
 
   - Test Suites & Checks:
       - Overview: test-suites/index.md
@@ -109,6 +112,8 @@ nav:
   - Reference:
       - Architecture: architecture/overview.md
       - Changelog: contributing/changelog.md
+
+  - Roadmap: roadmap.md
 
   - Contributing:
       - Contribution Guide: contributing/contribution-guide.md

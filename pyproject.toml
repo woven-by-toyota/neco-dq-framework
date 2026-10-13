@@ -30,6 +30,11 @@ dependencies = [
   "great_expectations>=1.9.0",
   "asteval>=0.9.30",
   "pandas>=2.0,<3.0",  # Pin to pandas 2.x to avoid PySpark compatibility issues
+  # GE transitives: cap below the Databricks Runtime's own pins so installing
+  # the wheel doesn't upgrade DBR packages out from under mlflow/langchain
+  # (packaging<26) and dataclasses-json (marshmallow<4). GE 1.23 accepts both.
+  "packaging<26",
+  "marshmallow<4",
 ]
 
 [project.urls]

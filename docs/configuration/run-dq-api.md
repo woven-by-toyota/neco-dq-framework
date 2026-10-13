@@ -1,4 +1,4 @@
-# `run_dq()` API Reference
+# Running DQ
 
 `run_dq()` is the main entry point for executing data quality checks. This page is
 the reference for its parameters and the filtering model. For how to *structure* a
