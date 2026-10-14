@@ -37,7 +37,7 @@ class TestDistinctCountSuggestion:
             assert "order_id" not in cols
             cat = next(c for c in result if c["column"] == "category")
             assert cat["enabled"] is True
-            assert cat["min"] <= 50 <= cat["max"]
+            assert cat["min_distinct_count"] <= 50 <= cat["max_distinct_count"]
             assert cat["_confidence"] == "medium"
             assert "_reason" in cat
 

@@ -127,7 +127,7 @@ class SuiteSuggestionsMixin:
             key_col = pk_columns[0] if len(pk_columns) == 1 else pk_columns
             checks["idempotency"] = {
                 "enabled": True,
-                "key_column": key_col,
+                "key_columns": key_col,
                 "severity": "error",
                 "blocking": True,
                 "_confidence": "high",
@@ -137,7 +137,7 @@ class SuiteSuggestionsMixin:
             key_col = unique_cols[0] if len(unique_cols) == 1 else unique_cols
             checks["idempotency"] = {
                 "enabled": False,
-                "key_column": key_col,
+                "key_columns": key_col,
                 "severity": "error",
                 "_confidence": "medium",
                 "_reason": "Candidate key (from approximate profiling). Review, then enable.",
@@ -149,7 +149,7 @@ class SuiteSuggestionsMixin:
             if any(kw in col.lower() for kw in freshness_kw):
                 checks["freshness"] = {
                     "enabled": True,
-                    "column": col,
+                    "timestamp_column": col,
                     "max_delay_hours": 72,
                     "severity": "warning",
                     "_confidence": "medium",
@@ -172,8 +172,8 @@ class SuiteSuggestionsMixin:
                 if "created" in col_a.lower() and "created" in col_b.lower():
                     return {
                         "enabled": True,
-                        "left_timestamp": col_a,
-                        "right_timestamp": col_b,
+                        "left_timestamp_column": col_a,
+                        "right_timestamp_column": col_b,
                         "severity": "error",
                         "blocking": True,
                     }
@@ -223,7 +223,7 @@ class SuiteSuggestionsMixin:
                     {
                         "enabled": True,
                         "group_by": col,
-                        "min": 1,
+                        "min_count": 1,
                         "severity": "warning",
                         "_comment": f"Detected FK pattern: {distinct_count} distinct values",
                         "_confidence": "low",
@@ -336,7 +336,7 @@ class SuiteSuggestionsMixin:
 
         return {
             "enabled": False,  # Disabled by default - needs manual review of allowed_flow
-            "key_column": key_col,
+            "key_columns": key_col,
             "status_column": status_col,
             "timestamp_column": timestamp_col,
             "allowed_flow": status_values,
@@ -466,8 +466,8 @@ class SuiteSuggestionsMixin:
                     {
                         "enabled": True,
                         "column": col,
-                        "min": int(distinct_count * _DISTINCT_COUNT_MIN_MULTIPLIER),
-                        "max": int(distinct_count * _DISTINCT_COUNT_MAX_MULTIPLIER),
+                        "min_distinct_count": int(distinct_count * _DISTINCT_COUNT_MIN_MULTIPLIER),
+                        "max_distinct_count": int(distinct_count * _DISTINCT_COUNT_MAX_MULTIPLIER),
                         "severity": "warning",
                         "_confidence": "medium",
                         "_reason": f"Moderate cardinality ({distinct_count} distinct)",
@@ -625,7 +625,7 @@ class SuiteSuggestionsMixin:
                 "metric": "COUNT(*)",
                 "history": {
                     "table": "<catalog.schema.dq_history_table>",  # e.g. catalog.schema.dq_test_history
-                    "tolerance_pct": 50,
+                    "tolerance_percent": 50,
                 },
                 "severity": "warning",
                 "_comment": "Enable and set history.table to verify row volume against history",
@@ -637,7 +637,7 @@ class SuiteSuggestionsMixin:
             if any(kw in col.lower() for kw in freshness_keywords):
                 gold_checks["freshness"] = {
                     "enabled": True,
-                    "column": col,
+                    "timestamp_column": col,
                     "max_delay_hours": 24,
                     "severity": "warning",
                 }

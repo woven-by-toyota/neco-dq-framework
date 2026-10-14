@@ -2,6 +2,111 @@
 
 ---
 
+## [1.4.0] - 2026-10-14
+
+Check-parameter standardization: a single naming convention across every check, with a non-breaking deprecation path for the old keys.
+
+### Added
+
+#### Declarative check-parameter schema (`neco_dq/core/registry/check_param_schema.py`)
+
+A single source of truth for every check's configuration surface: required keys, optional keys, deprecated-key aliases, and forbidden keys. It drives three things that used to drift independently: alias resolution, unknown-key validation, and the machine-readable inventory cross-checked against the suites' `_require_cfg` calls (new consistency test).
+
+#### Config-parameter validation (`dq_policy.unknown_check_params`)
+
+Unknown top-level check parameters (typically typos) are now surfaced, with a suggested correction via edit-distance (e.g. `kye_columns` → "did you mean 'key_columns'?"). Strictness is configurable:
+
+| Setting | Behavior |
+|---------|----------|
+| `warn` (default) | Logs a warning and continues (honors the non-breaking policy) |
+| `error` | Fails the run with a clear message naming the check and key |
+| `ignore` | Restores the pre-validation behavior |
+
+Forbidden keys (parameters that no longer apply because the current table is implicit, e.g. `target_*` on `flow_completeness`) are surfaced the same way.
+
+#### Deprecation reporting
+
+Deprecated-key usage is collected during a run (deduplicated per `(check, old_key)`, with the count of distinct tables that used it) and is available programmatically in the run summary under `deprecations`. A dedicated summary section renders it in **verbose runs only** (`run_dq(verbose=True)`), so normal runs stay clean. Nothing is printed mid-execution.
+
+#### `json_schema` supports `BINARY` columns
+
+`json_schema` now accepts `BINARY` columns (raw UTF-8 JSON bytes, as stored for raw Kafka payloads in Bronze): the column is decoded to STRING before `from_json`, so field/type/allowed-value validation works without a separate decode step. STRING and `STRUCT` / `ARRAY<STRUCT>` columns are unchanged. Investigation-query templates decode the column too, so they remain runnable against the physical table.
+
+### Changed
+
+#### Parameter renames (old keys still accepted, now deprecated)
+
+All renames below are **non-breaking**: the old key keeps working via an alias and is flagged as deprecated. Templates, docs, and generated configs now emit the new names. The old keys are scheduled for removal in the next major release, at which point they become validation errors.
+
+**Bronze**
+
+| Check | Old key | New key |
+|-------|---------|---------|
+| `record_count_anomaly` | `allowed_deviation_percent` | `max_deviation_percent` |
+| `table_freshness` | `max_days_stale` | `max_staleness_days` |
+
+**Silver**
+
+| Check | Old key | New key |
+|-------|---------|---------|
+| `idempotency`, `status_transition` | `key_column` | `key_columns` |
+| `cardinality` | `min` | `min_count` |
+| `totals_consistency` | `join_key`, `catalog`, `tolerance` | `join_columns`, `detail_catalog`, `tolerance_abs` |
+| `cross_table_equality` | `join_key`, `tolerance` | `join_columns`, `tolerance_abs` |
+| `temporal_consistency` | `join_key`, `left_timestamp`, `right_timestamp` | `join_columns`, `left_timestamp_column`, `right_timestamp_column` |
+| `row_temporal_consistency` | `left_timestamp`, `right_timestamp` | `left_timestamp_column`, `right_timestamp_column` |
+| `flow_completeness` | `join_key`, `tolerance_pct` | `join_columns`, `tolerance_percent` |
+| `lateness` | `lateness.column` | `lateness.timestamp_column` |
+
+**Gold**
+
+| Check | Old key | New key |
+|-------|---------|---------|
+| `reconciliation_expr` | `gold`, `silver` (expr), `tolerance` | `gold_expr`, `silver_expr`, `tolerance_percent` |
+| `coverage` | `tolerance_pct`, `join_keys`, `gold_join_keys`, `silver_join_keys` | `tolerance_percent`, `join_columns`, `gold_join_columns`, `silver_join_columns` |
+| `volume` | `min`, `max`, `history.tolerance_pct` | `min_value`, `max_value`, `history.tolerance_percent` |
+| `cross_gold` | `tolerance` | `tolerance_abs` |
+
+**Shared checks** (apply wherever the check is exposed)
+
+| Check | Old key | New key |
+|-------|---------|---------|
+| `distinct_count` | `min`, `max` | `min_distinct_count`, `max_distinct_count` |
+| `freshness` | `column` | `timestamp_column` |
+| `json_schema` | `max_parse_failure_pct` | `max_parse_failure_percent` |
+| `business_rules` | `check` | `predicate` |
+| `compare_metric` | `tolerance` | `tolerance_abs` |
+
+#### Current table is now implicit (rule 11)
+
+Checks that re-declared the table under validation no longer require it; the table always comes from `table_ctx`, and override keys are optional defaults:
+
+- `referential_integrity`: `source_schema`/`source_table`/`source_catalog` are now **optional**, defaulting to the validated table (previously the required `schema`/`table` were reloaded by name).
+- `cross_table_equality`, `temporal_consistency`: `left_schema`/`left_table`/`left_catalog` are now **optional**, defaulting to the validated table; only the `right` side is required.
+- `cross_gold`: `left_table` is now **optional**, defaulting to the validated table; the signature is widened to `(df, cfg, table_ctx)`.
+
+#### Dashboard generation: per-layer catalogs and optional tiers
+
+`generate_dashboard()` / `hydrate_template()` (`neco_dq/dashboards/lakeview.py`) now support medallion tiers that live in **different catalogs** and dashboards that cover only **some** tiers.
+
+- **`layers`** accepts, per tier, either the existing `list[str]` of schemas (which live in the global `catalog`) **or** a dict `{"catalog": ..., "schemas": [...]}` for a tier in its own catalog. Mixed forms are allowed.
+- **Tiers are optional**: at least one is required; a bronze-only dashboard is valid. Absent tiers render empty widgets rather than being removed.
+- **`catalog`** is now optional (required only if a tier uses the list form). The previous single-catalog call shape is unchanged and fully backward compatible.
+- Every dataset is now scoped by a `CONCAT(catalog, '.', schema) IN (...)` pair predicate instead of a single `catalog = '...'` equality, so tiers that share a schema name across catalogs stay correctly separated. `expected_tables` entries resolve their catalog from `layers` and are matched on `catalog.schema.table`.
+- **`expected_tables`** accepts, per entry, either the existing `(schema, table)` pair (catalog resolved from `layers`) **or** an explicit `(catalog, schema, table)` triple; the two forms may be mixed. The triple lets a schema name that lives in more than one catalog be referenced unambiguously — a bare pair for such a schema is now rejected as *ambiguous* and the triple names the catalog. A triple's `(catalog, schema)` must be declared in `layers`.
+
+### Deprecated
+
+- All old parameter keys listed above. They are accepted with a deprecation record this release and will be **removed in the next major release**, after which unknown legacy keys become errors (see `docs/configuration/naming-conventions.md`).
+
+### Fixed
+
+#### `binary_decodable` crash on malformed base64 under ANSI/Photon
+
+The `base64_json` format used `unbase64()`, which under ANSI / Photon strict mode raises `CONVERSION_INVALID_INPUT` on the first non-base64 row (e.g. a column that already holds decoded JSON text), aborting the entire check instead of counting the row as a failure. It now uses `try_to_binary(col, 'BASE64')` (NULL on malformed input) and validates JSON structure via the first decoded byte, so bad rows are counted and evaluated against the configured `threshold`.
+
+---
+
 ## [1.3.0] - 2026-07-31
 
 Dashboard provisioning: generate a ready-to-use Databricks AI/BI (Lakeview) dashboard on top of the DQ history table.
@@ -53,7 +158,7 @@ Options under `suggest_output`:
 
 | Option | Default | Effect |
 |--------|---------|--------|
-| `modular_config_path` | — | Directory to write the modular tree into |
+| `modular_config_path` | (none) | Directory to write the modular tree into |
 | `include_policy` | `true` | Write `global/policy.yaml` (required by the resolver) |
 | `include_profiles` | `false` | Write a `global/profiles.yml` template |
 | `parameterize_catalog` | `false` | Replace the catalog with `{{ profile.target_catalog }}` |
@@ -305,7 +410,7 @@ execution:
 
 This enables:
 - **Traceability**: Know which profile was used for each check result
-- **Debugging**: "This failed in prod but not in dev" — check `execution.profile`
+- **Debugging**: "This failed in prod but not in dev", check `execution.profile`
 - **Audit**: Historical results show the environment context
 
 The `profile` field is only present when profiles are actively used (not when using single-file configs without profiles).
@@ -367,7 +472,7 @@ alerts:
 - `run_dq()` now accepts optional `profile: str` parameter
 - All internal config functions propagate context for Jinja2 rendering
 - `_build_execution_trace()` now includes `profile` when profile context is set
-- `failure_threshold` is now informational only — shown in summary and policy message when exceeded
+- `failure_threshold` is now informational only: shown in summary and policy message when exceeded
 - Blocking failures always cause FAIL regardless of threshold
 - Non-blocking failures always cause WARN (threshold doesn't suppress warnings)
 - Summary now shows threshold when configured: `Success Rate: 85.7%  │  Threshold: 10%  │  Status: WARN`

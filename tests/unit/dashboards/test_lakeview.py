@@ -24,8 +24,11 @@ from neco_dq.dashboards.lakeview import (
     _build_expected_filter,
     _build_expected_tables,
     _build_ge_layer_case,
+    _build_scope_filter,
     _dashboard_url,
     _discover_warehouse,
+    _normalize_expected,
+    _normalize_layers,
     _print_confirmation,
     _quoted_csv,
     hydrate_template,
@@ -69,6 +72,14 @@ REF_EXPECTED = [
 # A distinct deployment to prove neutrality across schema layouts.
 CUSTOM_LAYERS = {"bronze": ["raw"], "silver": ["clean"], "gold": ["mart", "marts"]}
 CUSTOM_EXPECTED = [("mart", "orders"), ("clean", "events")]
+# CUSTOM_LAYERS normalized against the "mycat" global catalog (see _hydrate).
+CUSTOM_BY_LAYER = {
+    "bronze": ("mycat", ["raw"]),
+    "silver": ("mycat", ["clean"]),
+    "gold": ("mycat", ["mart", "marts"]),
+}
+# Resolved (catalog, schema, table) triples for CUSTOM_EXPECTED under CUSTOM_BY_LAYER.
+CUSTOM_EXPECTED_TRIPLES = [("mycat", "mart", "orders"), ("mycat", "clean", "events")]
 
 
 def _hydrate(**overrides):
@@ -95,38 +106,97 @@ class TestFragmentBuilders:
 
     @allure.tag(AllureTag.POSITIVE)
     def test_ge_layer_case_covers_all_tiers(self):
-        with allure.step("GE-folding CASE references every tier and its schemas"):
-            sql = _build_ge_layer_case(CUSTOM_LAYERS)
+        with allure.step("GE-folding CASE references every tier and its (catalog, schema) pairs"):
+            sql = _build_ge_layer_case(CUSTOM_BY_LAYER)
             assert "THEN 'bronze'" in sql and "THEN 'silver'" in sql and "THEN 'gold'" in sql
-            assert "'mart', 'marts'" in sql
+            assert "'mycat.mart', 'mycat.marts'" in sql
+            assert "CONCAT(catalog, '.', schema) IN" in sql
             assert "ELSE test_suite" in sql
 
     @allure.tag(AllureTag.POSITIVE)
     def test_expected_tables_cte(self):
-        with allure.step("Expected-tables CTE is a UNION ALL of the given pairs"):
-            sql = _build_expected_tables("mycat", CUSTOM_EXPECTED)
+        with allure.step("Expected-tables CTE is a UNION ALL over the resolved triples"):
+            sql = _build_expected_tables(CUSTOM_EXPECTED_TRIPLES)
             assert sql.startswith("expected_tables AS (")
-            assert sql.count("UNION ALL") == len(CUSTOM_EXPECTED) - 1
+            assert sql.count("UNION ALL") == len(CUSTOM_EXPECTED_TRIPLES) - 1
             assert "'mart'" in sql and "'orders'" in sql and "'mycat'" in sql
-
-    @allure.tag(AllureTag.NEGATIVE)
-    def test_expected_tables_empty_raises(self):
-        with allure.step("Empty expected-tables is rejected"):
-            with pytest.raises(ValueError, match="non-empty"):
-                _build_expected_tables("cat", [])
 
     @allure.tag(AllureTag.POSITIVE)
     def test_expected_filter_predicate(self):
-        with allure.step("Expected-filter is a schema.table IN predicate"):
-            sql = _build_expected_filter(CUSTOM_EXPECTED)
-            assert sql.startswith(" AND CONCAT(schema, '.', table) IN (")
-            assert "'mart.orders'" in sql and "'clean.events'" in sql
+        with allure.step("Expected-filter is a catalog.schema.table IN predicate"):
+            sql = _build_expected_filter(CUSTOM_EXPECTED_TRIPLES)
+            assert sql.startswith(" AND CONCAT(catalog, '.', schema, '.', table) IN (")
+            assert "'mycat.mart.orders'" in sql and "'mycat.clean.events'" in sql
+
+    @allure.tag(AllureTag.NEGATIVE)
+    def test_normalize_expected_empty_raises(self):
+        with allure.step("Empty expected-tables is rejected"):
+            with pytest.raises(ValueError, match="non-empty"):
+                _normalize_expected([], CUSTOM_BY_LAYER)
 
     @allure.tag(AllureTag.NEGATIVE)
     def test_quote_injection_rejected(self):
         with allure.step("A table name containing a quote is rejected"):
             with pytest.raises(ValueError, match="invalid"):
-                _build_expected_tables("cat", [("ok", "b'ad")])
+                _normalize_expected([("ok", "b'ad")], {"bronze": ("cat", ["ok"])})
+
+    @allure.tag(AllureTag.POSITIVE)
+    def test_normalize_expected_pair_resolves_catalog(self):
+        with allure.step("A (schema, table) pair resolves its catalog from layers"):
+            out = _normalize_expected([("raw", "t")], {"bronze": ("cb", ["raw"])})
+            assert out == [("cb", "raw", "t")]
+
+    @allure.tag(AllureTag.POSITIVE)
+    def test_normalize_expected_triple_passthrough(self):
+        with allure.step("A (catalog, schema, table) triple keeps its explicit catalog"):
+            by_layer = {"bronze": ("cat_a", ["raw"]), "silver": ("cat_b", ["raw"])}
+            out = _normalize_expected([("cat_a", "raw", "t1"), ("cat_b", "raw", "t2")], by_layer)
+            assert out == [("cat_a", "raw", "t1"), ("cat_b", "raw", "t2")]
+
+    @allure.tag(AllureTag.NEGATIVE)
+    def test_normalize_expected_ambiguous_pair_rejected(self):
+        with allure.step("A 2-tuple whose schema lives in two catalogs is rejected"):
+            by_layer = {"bronze": ("cat_a", ["raw"]), "silver": ("cat_b", ["raw"])}
+            with pytest.raises(ValueError, match="ambiguous"):
+                _normalize_expected([("raw", "t")], by_layer)
+
+    @allure.tag(AllureTag.NEGATIVE)
+    def test_normalize_expected_triple_not_in_layers_rejected(self):
+        with allure.step("A triple whose (catalog, schema) is not in layers is rejected"):
+            with pytest.raises(ValueError, match="not declared in 'layers'"):
+                _normalize_expected([("other_cat", "raw", "t")], {"bronze": ("cb", ["raw"])})
+
+    @allure.tag(AllureTag.NEGATIVE)
+    def test_normalize_expected_schema_not_declared_rejected(self):
+        with allure.step("A 2-tuple schema absent from every layer is rejected"):
+            with pytest.raises(ValueError, match="not declared in any layer"):
+                _normalize_expected([("missing", "t")], {"bronze": ("cb", ["raw"])})
+
+    @allure.tag(AllureTag.NEGATIVE)
+    def test_normalize_expected_bad_arity_rejected(self):
+        with allure.step("An entry that is neither a pair nor a triple is rejected"):
+            with pytest.raises(ValueError, match="\\(schema, table\\) or"):
+                _normalize_expected([("a", "b", "c", "d")], {"bronze": ("cb", ["b"])})
+
+    @allure.tag(AllureTag.POSITIVE)
+    def test_normalize_layers_list_form(self):
+        with allure.step("List-form tiers inherit the global catalog, in medallion order"):
+            by_layer = _normalize_layers({"gold": ["m"], "bronze": ["r"]}, "glob")
+            assert list(by_layer) == ["bronze", "gold"]  # medallion order, present only
+            assert by_layer["bronze"] == ("glob", ["r"])
+            assert by_layer["gold"] == ("glob", ["m"])
+
+    @allure.tag(AllureTag.POSITIVE)
+    def test_normalize_layers_dict_form(self):
+        with allure.step("Dict-form tiers carry their own catalog"):
+            by_layer = _normalize_layers({"bronze": {"catalog": "cb", "schemas": ["r"]}}, None)
+            assert by_layer == {"bronze": ("cb", ["r"])}
+
+    @allure.tag(AllureTag.POSITIVE)
+    def test_build_scope_filter_pairs(self):
+        with allure.step("Scope filter is a CONCAT(catalog, '.', schema) IN over all pairs"):
+            sql = _build_scope_filter({"bronze": ("cb", ["r"]), "silver": ("cs", ["c1", "c2"])})
+            assert sql == "CONCAT(catalog, '.', schema) IN ('cb.r', 'cs.c1', 'cs.c2')"
 
 
 @allure.feature(AllureFeature.CORE)
@@ -167,7 +237,7 @@ class TestHydrateTemplate:
             # "{{ @ }}" / "{{ @formatted }}" display tokens legitimately remain.)
             for tok in (
                 "{{history_table}}",
-                "{{catalog}}",
+                "{{scope_filter}}",
                 "{{schemas}}",
                 "{{warehouse_id}}",
                 "{{ge_layer_case}}",
@@ -175,6 +245,8 @@ class TestHydrateTemplate:
                 "{{schema_layer_case_bt}}",
                 "{{expected_tables}}",
                 "{{expected_filter}}",
+                # Removed per-tier tokens must never reappear.
+                "{{catalog}}",
                 "{{schemas_bronze}}",
                 "{{schemas_silver}}",
                 "{{schemas_gold}}",
@@ -193,12 +265,22 @@ class TestHydrateTemplate:
     @allure.tag(AllureTag.EDGE_CASE)
     def test_expected_filter_scopes_every_dataset(self):
         """Every dataset's base scan is restricted to the expected tables."""
-        with allure.step("The schema.table IN predicate appears in all 8 datasets"):
+        with allure.step("The catalog.schema.table IN predicate appears in all 8 datasets"):
             sd = _hydrate()["serialized_dashboard"]
             # One injected predicate per dataset (8).
-            assert sd.count("CONCAT(schema, '.', table) IN") == 8
+            assert sd.count("CONCAT(catalog, '.', schema, '.', table) IN") == 8
             # And it carries the custom keys, not any reference table.
-            assert "'mart.orders'" in sd
+            assert "'mycat.mart.orders'" in sd
+
+    @allure.tag(AllureTag.EDGE_CASE)
+    def test_scope_filter_replaces_single_catalog_equality(self):
+        """The per-pair scope filter replaces the old single catalog = '...' equality."""
+        with allure.step("No single-catalog equality remains; (catalog, schema) pairs are present"):
+            sd = _hydrate()["serialized_dashboard"]
+            # The old 'catalog = '<value>'' equality filter must be gone entirely.
+            assert "catalog = '" not in sd
+            # Every declared (catalog, schema) pair is present in the scope predicate.
+            assert "'mycat.raw'" in sd and "'mycat.clean'" in sd and "'mycat.mart'" in sd
 
     @allure.tag(AllureTag.POSITIVE)
     def test_custom_deployment_has_no_reference_leakage(self):
@@ -231,11 +313,110 @@ class TestHydrateTemplate:
             with pytest.raises(ValueError, match="unexpected layer"):
                 _hydrate(layers={"bronze": ["b"], "platinum": ["p"]})
 
+    @allure.tag(AllureTag.POSITIVE)
+    def test_missing_tier_allowed(self):
+        with allure.step("A subset of tiers (no gold) hydrates successfully"):
+            # Tiers are optional; the absent gold tier contributes no scope pairs.
+            sd = _hydrate(
+                layers={"bronze": ["b"], "silver": ["s"]},
+                expected_tables=[("b", "t1"), ("s", "t2")],
+            )["serialized_dashboard"]
+            assert "'mycat.b'" in sd and "'mycat.s'" in sd
+            assert "THEN 'gold'" not in sd
+
+    @allure.tag(AllureTag.POSITIVE)
+    def test_bronze_only(self):
+        with allure.step("A bronze-only deployment hydrates with just its pairs"):
+            sd = _hydrate(
+                layers={"bronze": ["raw"]},
+                expected_tables=[("raw", "ingestion")],
+            )["serialized_dashboard"]
+            assert "'mycat.raw'" in sd
+            assert "THEN 'silver'" not in sd and "THEN 'gold'" not in sd
+            assert json.loads(sd)  # still valid JSON
+
     @allure.tag(AllureTag.NEGATIVE)
-    def test_missing_tier_rejected(self):
-        with allure.step("A missing medallion tier is rejected"):
+    def test_empty_layers_rejected(self):
+        with allure.step("An empty layers mapping is rejected"):
+            with pytest.raises(ValueError, match="at least one medallion tier"):
+                _hydrate(layers={})
+
+    @allure.tag(AllureTag.NEGATIVE)
+    def test_empty_tier_rejected(self):
+        with allure.step("A present tier with no schemas is rejected"):
             with pytest.raises(ValueError, match="non-empty schema list"):
-                _hydrate(layers={"bronze": ["b"], "silver": ["s"]})  # no gold
+                _hydrate(layers={"bronze": []})
+
+    @allure.tag(AllureTag.POSITIVE)
+    def test_per_layer_catalog(self):
+        with allure.step("Each tier can live in its own catalog"):
+            sd = _hydrate(
+                catalog=None,
+                layers={
+                    "bronze": {"catalog": "cat_b", "schemas": ["raw"]},
+                    "silver": {"catalog": "cat_s", "schemas": ["clean"]},
+                },
+                expected_tables=[("raw", "ingestion"), ("clean", "events")],
+            )["serialized_dashboard"]
+            # Scope pairs carry each tier's own catalog.
+            assert "'cat_b.raw'" in sd and "'cat_s.clean'" in sd
+            # Expected filter resolves each schema's catalog.
+            assert "'cat_b.raw.ingestion'" in sd and "'cat_s.clean.events'" in sd
+
+    @allure.tag(AllureTag.POSITIVE)
+    def test_mixed_global_and_per_layer_catalog(self):
+        with allure.step("List-form tiers use the global catalog; dict-form tiers their own"):
+            sd = _hydrate(
+                catalog="cat_global",
+                layers={
+                    "bronze": ["raw"],  # uses cat_global
+                    "silver": {"catalog": "cat_s", "schemas": ["clean"]},
+                },
+                expected_tables=[("raw", "ingestion"), ("clean", "events")],
+            )["serialized_dashboard"]
+            assert "'cat_global.raw'" in sd and "'cat_s.clean'" in sd
+
+    @allure.tag(AllureTag.NEGATIVE)
+    def test_list_form_without_global_catalog_rejected(self):
+        with allure.step("A list-form tier without a global catalog is rejected"):
+            with pytest.raises(ValueError, match="global catalog"):
+                _hydrate(catalog=None, layers={"bronze": ["raw"]})
+
+    @allure.tag(AllureTag.NEGATIVE)
+    def test_cross_catalog_schema_pair_rejected(self):
+        with allure.step("A 2-tuple for a schema shared across catalogs is ambiguous"):
+            with pytest.raises(ValueError, match="ambiguous"):
+                _hydrate(
+                    catalog=None,
+                    layers={
+                        "bronze": {"catalog": "cat_a", "schemas": ["shared"]},
+                        "silver": {"catalog": "cat_b", "schemas": ["shared"]},
+                    },
+                    expected_tables=[("shared", "t")],
+                )
+
+    @allure.tag(AllureTag.POSITIVE)
+    def test_triple_disambiguates_cross_catalog_schema(self):
+        with allure.step("Triples let a schema name shared across catalogs be scoped per-catalog"):
+            sd = _hydrate(
+                catalog=None,
+                layers={
+                    "bronze": {"catalog": "cat_a", "schemas": ["shared"]},
+                    "silver": {"catalog": "cat_b", "schemas": ["shared"]},
+                },
+                expected_tables=[("cat_a", "shared", "t1"), ("cat_b", "shared", "t2")],
+            )["serialized_dashboard"]
+            # Both catalogs are in scope and each expected table keeps its own catalog.
+            assert "'cat_a.shared'" in sd and "'cat_b.shared'" in sd
+            assert "'cat_a.shared.t1'" in sd and "'cat_b.shared.t2'" in sd
+
+    @allure.tag(AllureTag.POSITIVE)
+    def test_mixed_pair_and_triple_expected_tables(self):
+        with allure.step("The same list accepts (schema, table) pairs and (catalog, schema, table) triples"):
+            sd = _hydrate(
+                expected_tables=[("mart", "orders"), ("mycat", "clean", "events")],
+            )["serialized_dashboard"]
+            assert "'mycat.mart.orders'" in sd and "'mycat.clean.events'" in sd
 
     @allure.tag(AllureTag.NEGATIVE)
     def test_invalid_history_table_rejected(self):
@@ -274,11 +455,12 @@ class TestHydrateTemplate:
             sd = payload["serialized_dashboard"]
             # Every dataset FROM is hydrated from the single history-table token.
             assert sd.count(REF_HISTORY) == 12
-            # The medallion IN-list is rendered from REF_LAYERS.
+            # The medallion schema union (the harmless superset pre-filter) is rendered.
             assert "'bronze_schema', 'silver_schema', 'gold_schema'" in sd
             # The expected-tables CTE + filter are rendered from REF_EXPECTED.
             assert "'orders'" in sd and "'customers'" in sd
-            assert "gold_schema.orders" in sd  # expected_filter uses schema.table keys
+            # expected_filter now uses catalog.schema.table keys.
+            assert "cat_ref.gold_schema.orders" in sd
 
 
 @allure.feature(AllureFeature.CORE)

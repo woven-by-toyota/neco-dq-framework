@@ -17,11 +17,19 @@ databricks secrets create-scope dq-alerts
 databricks secrets put-secret dq-alerts slack_webhook_url --string-value "https://hooks.slack.com/services/XXX/YYY/ZZZ"
 ```
 
+These exact names (`dq-alerts` / `slack_webhook_url`) are what the framework
+reads — creating the secret is all that is needed, with no code or task wiring
+of your own. See [Webhook Resolution](#webhook-resolution).
+
 **Option B: Environment Variable**
 
 ```bash
 export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/XXX/YYY/ZZZ"
 ```
+
+For notebooks and local runs only — not reliable on Databricks jobs, and unusable
+on serverless tasks (see [Webhook Resolution](#webhook-resolution)). Use the
+secret there.
 
 ### 3. Enable in Config
 
@@ -149,6 +157,24 @@ The framework looks for the webhook URL in this order:
 1. **Databricks secret** (`scope: dq-alerts`, `key: slack_webhook_url`)
 2. **Environment variable** `SLACK_WEBHOOK_URL`
 
+The scope and key names are **fixed** — the framework reads exactly `dq-alerts` /
+`slack_webhook_url` and this is not configurable. Create the secret under those
+names and you are done: the framework resolves it itself at runtime via
+`dbutils`, so the webhook never has to pass through your run script, your task
+parameters, or any wiring of your own. A scope under any other name will not be
+found.
+
+On Databricks jobs, prefer the secret over the environment variable. A
+`{{secrets/scope/key}}` reference does **not** resolve inside task parameters,
+and a serverless task has no cluster environment variables in which to set
+`SLACK_WEBHOOK_URL` — so the secret is the only path that works there. The
+environment variable is meant for notebooks and local runs.
+
+The secret lookup is best-effort: if the secret cannot be read — for example the
+scope exists but the job lacks permission on it — the framework silently falls
+back to the environment variable and logs the reason only at debug level. So a
+misconfigured secret looks the same as no secret at all.
+
 If neither is found, alerts are skipped with a warning:
 ```
 Slack webhook URL not configured. Skipping alerts.
@@ -218,7 +244,15 @@ profiles:
 ### "Slack webhook URL not configured"
 
 - Check Databricks secret exists: `databricks secrets list dq-alerts`
+- Confirm the exact names: scope `dq-alerts`, key `slack_webhook_url` (both are fixed)
 - Check env var is set: `echo $SLACK_WEBHOOK_URL`
+
+### Secret exists but alerts still skip
+
+- The job may lack read permission on the `dq-alerts` scope. The framework falls
+  back to the env var on any read failure and logs the reason only at debug
+  level, so a permission problem is invisible at the default log level. Check the
+  scope ACLs, or raise the log level to see the underlying error.
 
 ### Message Not Appearing
 

@@ -353,7 +353,7 @@ class TestDistinctCountCheck:
     @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)
     def test_distinct_count_range_pass(self, checker, df_distinct):
         with allure.step("Setup test data"):
-            cfg = {"column": "category", "min": 2, "max": 5}  # 3 distinct
+            cfg = {"column": "category", "min_distinct_count": 2, "max_distinct_count": 5}  # 3 distinct
 
         with allure.step("Execute function under test"):
             passed, details, _column = checker._check_distinct_count(df_distinct, cfg)
@@ -367,7 +367,7 @@ class TestDistinctCountCheck:
     @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
     def test_distinct_count_below_min(self, checker, df_distinct):
         with allure.step("Setup test data"):
-            cfg = {"column": "category", "min": 10}
+            cfg = {"column": "category", "min_distinct_count": 10}
 
         with allure.step("Execute function under test"):
             passed, _, _ = checker._check_distinct_count(df_distinct, cfg)
@@ -380,7 +380,7 @@ class TestDistinctCountCheck:
     @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
     def test_distinct_count_above_max(self, checker, df_distinct):
         with allure.step("Setup test data"):
-            cfg = {"column": "category", "max": 1}
+            cfg = {"column": "category", "max_distinct_count": 1}
 
         with allure.step("Execute function under test"):
             passed, _, _ = checker._check_distinct_count(df_distinct, cfg)
@@ -447,7 +447,7 @@ class TestFreshnessCheck:
     @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)
     def test_freshness_pass(self, checker, df_timestamp):
         with allure.step("Setup test data"):
-            cfg = {"column": "updated_at", "max_delay_hours": 24}
+            cfg = {"timestamp_column": "updated_at", "max_delay_hours": 24}
 
         with allure.step("Execute function under test"):
             passed, details, column = checker._check_freshness(df_timestamp, cfg)
@@ -462,7 +462,7 @@ class TestFreshnessCheck:
     @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
     def test_freshness_fail(self, checker, df_stale):
         with allure.step("Setup test data"):
-            cfg = {"column": "updated_at", "max_delay_hours": 24}
+            cfg = {"timestamp_column": "updated_at", "max_delay_hours": 24}
 
         with allure.step("Execute function under test"):
             passed, details, _ = checker._check_freshness(df_stale, cfg)
@@ -476,7 +476,7 @@ class TestFreshnessCheck:
     @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)
     def test_freshness_default_delay(self, checker, df_timestamp):
         with allure.step("Setup test data"):
-            cfg = {"column": "updated_at"}
+            cfg = {"timestamp_column": "updated_at"}
 
         with allure.step("Execute function under test"):
             passed, details, _ = checker._check_freshness(df_timestamp, cfg)
@@ -505,7 +505,7 @@ class TestFreshnessCheck:
     def test_freshness_empty_data(self, checker, spark):
         with allure.step("Setup test data"):
             df_empty = spark.createDataFrame([], "id INT, updated_at TIMESTAMP")
-            cfg = {"column": "updated_at"}
+            cfg = {"timestamp_column": "updated_at"}
 
         with allure.step("Execute function under test"):
             passed, details, _ = checker._check_freshness(df_empty, cfg)
@@ -530,7 +530,7 @@ class TestBusinessRulesCheck:
     @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)
     def test_business_rule_pass(self, checker, df_business):
         with allure.step("Setup test data"):
-            cfg = {"check": "status IN ('active', 'inactive')", "name": "valid_status"}
+            cfg = {"predicate": "status IN ('active', 'inactive')", "name": "valid_status"}
 
         with allure.step("Execute function under test"):
             passed, details, _ = checker._check_business_rules(df_business, cfg)
@@ -544,7 +544,7 @@ class TestBusinessRulesCheck:
     @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
     def test_business_rule_fail(self, checker, df_business):
         with allure.step("Setup test data"):
-            cfg = {"check": "price >= cost", "name": "price_above_cost"}
+            cfg = {"predicate": "price >= cost", "name": "price_above_cost"}
 
         with allure.step("Execute function under test"):
             passed, details, _ = checker._check_business_rules(df_business, cfg)
@@ -558,7 +558,7 @@ class TestBusinessRulesCheck:
     @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)
     def test_business_rule_default_name(self, checker, df_business):
         with allure.step("Setup test data"):
-            cfg = {"check": "id > 0"}
+            cfg = {"predicate": "id > 0"}
 
         with allure.step("Execute function under test"):
             passed, details, _ = checker._check_business_rules(df_business, cfg)
@@ -748,6 +748,162 @@ class TestJsonSchemaCheck:
         with allure.step("Verify: Json Schema Empty Data"):
             assert passed is True
             assert "No data to validate" in details
+
+    @allure.title("JSON schema check validates a decoded STRUCT column")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)
+    def test_json_schema_struct_column_pass(self, checker, spark):
+        with allure.step("Setup test data"):
+            data = [(1, {"code": "A", "value": "10"}), (2, {"code": "B", "value": "20"})]
+            df = spark.createDataFrame(data, "id INT, items STRUCT<code: STRING, value: STRING>")
+            cfg = {"column": "items", "required_fields": ["code", "value"]}
+
+        with allure.step("Execute function under test"):
+            passed, details, column = checker._check_json_schema(df, cfg)
+
+        with allure.step("Verify: Json Schema Struct Column Pass"):
+            assert passed is True
+            assert column == "items"
+            assert "JSON schema OK" in details
+
+    @allure.title("JSON schema check fails for field absent from STRUCT schema")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
+    def test_json_schema_struct_column_missing_field(self, checker, spark):
+        with allure.step("Setup test data"):
+            data = [(1, {"code": "A"}), (2, {"code": "B"})]
+            df = spark.createDataFrame(data, "id INT, items STRUCT<code: STRING>")
+            cfg = {"column": "items", "required_fields": ["code", "name"]}
+
+        with allure.step("Execute function under test"):
+            passed, details, _ = checker._check_json_schema(df, cfg)
+
+        with allure.step("Verify: Json Schema Struct Missing Field"):
+            assert passed is False
+            assert "missing fields" in details
+
+    @allure.title("JSON schema check fails for null required field in STRUCT")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
+    def test_json_schema_struct_null_required(self, checker, spark):
+        with allure.step("Setup test data"):
+            data = [(1, {"code": "A"}), (2, {"code": None})]
+            df = spark.createDataFrame(data, "id INT, items STRUCT<code: STRING>")
+            cfg = {"column": "items", "required_fields": ["code"]}
+
+        with allure.step("Execute function under test"):
+            passed, details, _ = checker._check_json_schema(df, cfg)
+
+        with allure.step("Verify: Json Schema Struct Null Required"):
+            assert passed is False
+            assert "missing fields" in details
+
+    @allure.title("JSON schema check validates a decoded ARRAY<STRUCT> column")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)
+    def test_json_schema_array_struct_pass(self, checker, spark):
+        with allure.step("Setup test data"):
+            data = [(1, [{"code": "A"}, {"code": "B"}])]
+            df = spark.createDataFrame(data, "id INT, items ARRAY<STRUCT<code: STRING>>")
+            cfg = {"column": "items", "required_fields": ["code"], "array_element": True}
+
+        with allure.step("Execute function under test"):
+            passed, details, _ = checker._check_json_schema(df, cfg)
+
+        with allure.step("Verify: Json Schema Array Struct Pass"):
+            assert passed is True
+            assert "JSON schema OK" in details
+
+    @allure.title("JSON schema validates a BINARY column holding UTF-8 JSON")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)
+    def test_json_schema_binary_column_pass(self, checker, spark):
+        """BINARY payloads (raw Kafka value bytes) are decoded to STRING and validated."""
+        with allure.step("Setup test data"):
+            payload = b'{"wovenId": "w1", "sessionId": "s1", "startTimeMs": "123"}'
+            data = [(1, bytearray(payload)), (2, bytearray(payload))]
+            df = spark.createDataFrame(data, "id INT, value BINARY")
+            cfg = {
+                "column": "value",
+                "array_element": False,
+                "required_fields": ["wovenId", "sessionId", "startTimeMs"],
+            }
+
+        with allure.step("Execute function under test"):
+            passed, details, column = checker._check_json_schema(df, cfg)
+
+        with allure.step("Verify: Json Schema Binary Column Pass"):
+            assert passed is True
+            assert column == "value"
+            assert "JSON schema OK" in details
+
+    @allure.title("JSON schema flags missing field in a BINARY JSON column")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
+    def test_json_schema_binary_column_missing_field(self, checker, spark):
+        with allure.step("Setup test data"):
+            payload = b'{"wovenId": "w1"}'
+            data = [(1, bytearray(payload))]
+            df = spark.createDataFrame(data, "id INT, value BINARY")
+            cfg = {
+                "column": "value",
+                "array_element": False,
+                "required_fields": ["wovenId", "sessionId"],
+            }
+
+        with allure.step("Execute function under test"):
+            passed, details, _ = checker._check_json_schema(df, cfg)
+
+        with allure.step("Verify: Json Schema Binary Column Missing Field"):
+            assert passed is False
+            assert "missing fields" in details
+
+    @allure.title("JSON schema check detects type mismatch in STRUCT field")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
+    def test_json_schema_struct_type_mismatch(self, checker, spark):
+        with allure.step("Setup test data"):
+            data = [(1, {"count": "not_a_number"})]
+            df = spark.createDataFrame(data, "id INT, items STRUCT<count: STRING>")
+            cfg = {"column": "items", "field_types": {"count": "int"}}
+
+        with allure.step("Execute function under test"):
+            passed, details, _ = checker._check_json_schema(df, cfg)
+
+        with allure.step("Verify: Json Schema Struct Type Mismatch"):
+            assert passed is False
+            assert "type mismatches" in details
+
+    @allure.title("JSON schema check validates typed int STRUCT field")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)
+    def test_json_schema_struct_typed_int_pass(self, checker, spark):
+        with allure.step("Setup test data"):
+            data = [(1, {"count": 42})]
+            df = spark.createDataFrame(data, "id INT, items STRUCT<count: INT>")
+            cfg = {"column": "items", "field_types": {"count": "int"}}
+
+        with allure.step("Execute function under test"):
+            passed, _details, _ = checker._check_json_schema(df, cfg)
+
+        with allure.step("Verify: Json Schema Struct Typed Int Pass"):
+            assert passed is True
+
+    @allure.title("JSON schema check skips nested paths on STRUCT column")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.EDGE_CASE, AllureTag.SPARK)
+    def test_json_schema_struct_nested_skipped(self, checker, spark):
+        with allure.step("Setup test data"):
+            data = [(1, {"code": "A"})]
+            df = spark.createDataFrame(data, "id INT, items STRUCT<code: STRING>")
+            cfg = {"column": "items", "required_fields": ["code", "rows.row_code"]}
+
+        with allure.step("Execute function under test"):
+            passed, details, _ = checker._check_json_schema(df, cfg)
+
+        with allure.step("Verify: Json Schema Struct Nested Skipped"):
+            assert passed is True
+            assert "nested paths skipped" in details
 
 
 # =============================================================================
@@ -1034,7 +1190,7 @@ class TestJsonSchemaParseFailures:
                 (3, '[{"code": "A"}]'),  # Only one valid
             ]
             df = spark.createDataFrame(data, ["id", "items"])
-            cfg = {"column": "items", "required_fields": ["code"], "max_parse_failure_pct": 10}
+            cfg = {"column": "items", "required_fields": ["code"], "max_parse_failure_percent": 10}
 
         with allure.step("Execute function under test"):
             passed, details, _ = checker._check_json_schema(df, cfg)
@@ -1331,7 +1487,7 @@ class TestFreshnessTimezone:
             now_naive = dt.now()  # noqa: DTZ005 - intentionally naive for testing
             data = [(1, now_naive)]
             df = spark.createDataFrame(data, ["id", "updated_at"])
-            cfg = {"column": "updated_at", "max_delay_hours": 24}
+            cfg = {"timestamp_column": "updated_at", "max_delay_hours": 24}
 
         with allure.step("Execute function under test"):
             passed, details, column = checker._check_freshness(df, cfg)
@@ -1426,9 +1582,9 @@ class TestCompareMetricEdgeCases:
             def raise_error(*_args, **_kwargs):
                 raise ValueError("Test error")
 
-            from neco_dq.test_suites import shared_checks
+            from neco_dq.test_suites.shared_checks import compare_metric_check
 
-            monkeypatch.setattr(shared_checks, "compare", raise_error)
+            monkeypatch.setattr(compare_metric_check, "compare", raise_error)
 
         with allure.step("Execute function under test"):
             passed, details, _ = checker._check_compare_metric(df_metrics, cfg)

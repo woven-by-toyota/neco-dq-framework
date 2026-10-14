@@ -88,6 +88,7 @@ class DQSummaryTerminalLogger:
 
         self._log_issues_by_type(summary)
         self._log_tables_with_failures(summary)
+        self._log_deprecations(summary)
 
         self.logger.info("Legend: PASS=all ok │ WARN=non-blocking failures │ FAIL=blocking")
         self.logger.info(sep)
@@ -179,3 +180,31 @@ class DQSummaryTerminalLogger:
             self.logger.info(f"      ... and {remaining} more tables")
 
         self.logger.info("")
+
+    def _log_deprecations(self, summary: dict[str, Any]):
+        """Render deprecated-parameter usage (verbose only, via ``logger.debug``).
+
+        Deprecations are collected during the run and surfaced here as a single
+        summary section so normal runs stay clean. Programmatic consumers read
+        them from ``summary[<suite>]["deprecations"]`` regardless of verbosity.
+        """
+        # (suite.check, old, new) -> distinct table count across suites
+        rows: list[tuple[str, str, str, int]] = []
+        for engine, s in summary.items():
+            display_name = SUITE_DISPLAY_MAP.get(engine, engine)
+            for dep in s.get("deprecations", []):
+                label = f"{display_name}.{dep['check']}"
+                rows.append((label, dep["old"], dep["new"], dep.get("table_count", 0)))
+
+        if not rows:
+            return
+
+        rows.sort(key=lambda r: (r[0], r[1]))
+        label_w = max(len(r[0]) for r in rows)
+        old_w = max(len(r[1]) for r in rows)
+        new_w = max(len(r[2]) for r in rows)
+
+        self.logger.debug("Deprecated config keys (still working, removed in the next major):")
+        for label, old, new, table_count in rows:
+            table_word = "table" if table_count == 1 else "tables"
+            self.logger.debug(f"  {label:<{label_w}}   {old:<{old_w}} → {new:<{new_w}}   (x{table_count} {table_word})")

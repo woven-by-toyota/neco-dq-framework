@@ -108,7 +108,7 @@ The framework provides clean, informative terminal output during execution.
 
 ```
 [INFO] neco_dq: Resolving config: /Workspace/config/
-[INFO] neco_dq: Starting DQ v1.3.0
+[INFO] neco_dq: Starting DQ v1.4.0
 [INFO] neco_dq: Loading test suites...
 [INFO] neco_dq:   → bronze: 2 tables
 [INFO] neco_dq:   → silver: 2 tables

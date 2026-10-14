@@ -212,6 +212,35 @@ def df_binary_varied_sizes(spark):
 
 
 @pytest.fixture(scope="module")
+def df_base64_json(spark):
+    """DataFrame with base64-encoded JSON payloads (valid for base64_json format).
+
+    Schema: id INT, payload STRING
+    Rows: 2 rows, each a base64 string that decodes to a JSON object.
+    """
+    import base64
+
+    data = [
+        (1, base64.b64encode(b'{"key": "value1"}').decode()),
+        (2, base64.b64encode(b'{"key": "value2"}').decode()),
+    ]
+    return spark.createDataFrame(data, ["id", "payload"])
+
+
+@pytest.fixture(scope="module")
+def df_plain_json_string(spark):
+    """DataFrame with plain (non-base64) JSON text — malformed for base64_json format.
+
+    Schema: id INT, payload STRING
+    Rows: 2 rows holding raw JSON strings. Decoding these as base64 is invalid and,
+    under ANSI/Photon strict mode, would raise CONVERSION_INVALID_INPUT unless the
+    check tolerates malformed input.
+    """
+    data = [(1, '{"key": "value1"}'), (2, '{"key": "value2"}')]
+    return spark.createDataFrame(data, ["id", "payload"])
+
+
+@pytest.fixture(scope="module")
 def df_non_binary(spark):
     """DataFrame with string column (not binary) for type check tests.
 

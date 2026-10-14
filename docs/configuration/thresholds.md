@@ -23,8 +23,8 @@ threshold:
 
 Not every check is threshold-based. Row-level checks that count failing rows support
 `threshold`; checks with their own tolerance semantics use a dedicated parameter
-instead (e.g. `min_valid_ratio`, `tolerance`, `tolerance_pct`, `max_delay_hours`) or
-are binary pass/fail. See the per-suite tables:
+instead (e.g. `min_valid_percent`, `tolerance_abs`, `tolerance_percent`, `max_delay_hours`)
+or are binary pass/fail. See the per-suite tables:
 
 - [Bronze - supported checks](../test-suites/bronze.md#threshold-configuration)
 - [Silver - supported checks](../test-suites/silver.md#threshold-configuration)
@@ -34,3 +34,8 @@ are binary pass/fail. See the per-suite tables:
     If a check doesn't support `threshold`, it usually has a purpose-built tolerance
     knob documented in its Check Details entry. Look there before assuming a check is
     strict zero-tolerance.
+
+The `threshold` keys themselves (`max_failure_percent`, `max_failure_count`) are
+unchanged. For how the check-specific tolerance and column keys are named, and the
+deprecated spellings they replace, see
+[Parameter Naming Conventions](naming-conventions.md).

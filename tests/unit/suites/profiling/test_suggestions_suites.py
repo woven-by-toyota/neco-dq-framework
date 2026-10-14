@@ -249,7 +249,7 @@ class TestSilverSuggestions:
             assert idm["enabled"] is False
             assert "blocking" not in idm
             # When multiple candidate cols, key_column is a list
-            assert set(idm["key_column"]) == {"id", "created", "amount"}
+            assert set(idm["key_columns"]) == {"id", "created", "amount"}
 
         with allure.step("Build silver suggestions WITH a Unity Catalog primary key"):
             result_pk = profiling_suite._build_silver_suggestions(
@@ -266,7 +266,7 @@ class TestSilverSuggestions:
             assert idm_pk["enabled"] is True
             assert idm_pk["severity"] == "error"
             assert idm_pk["blocking"] is True
-            assert idm_pk["key_column"] == "id"
+            assert idm_pk["key_columns"] == "id"
 
     @allure.title("Build silver suggestions — freshness uses 'created' column")
     @allure.severity(AllureSeverity.NORMAL)
@@ -295,7 +295,7 @@ class TestSilverSuggestions:
         with allure.step("Verify: freshness uses created column with 72h max delay"):
             fr = result["freshness"]
             assert fr["enabled"] is True
-            assert fr["column"] == "created"
+            assert fr["timestamp_column"] == "created"
             assert fr["max_delay_hours"] == 72
             assert fr["severity"] == "warning"
 
@@ -440,7 +440,7 @@ class TestGoldSuggestions:
             assert vol["severity"] == "warning"
             hist = vol["history"]
             assert hist["table"] == "<catalog.schema.dq_history_table>"
-            assert hist["tolerance_pct"] == 50
+            assert hist["tolerance_percent"] == 50
 
     @allure.title("Build gold suggestions — freshness uses 'created' column")
     @allure.severity(AllureSeverity.NORMAL)
@@ -468,7 +468,7 @@ class TestGoldSuggestions:
         with allure.step("Verify: freshness uses created column with 24h max delay"):
             fr = result["freshness"]
             assert fr["enabled"] is True
-            assert fr["column"] == "created"
+            assert fr["timestamp_column"] == "created"
             assert fr["max_delay_hours"] == 24
             assert fr["severity"] == "warning"
 

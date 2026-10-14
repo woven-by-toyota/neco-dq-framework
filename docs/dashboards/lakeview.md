@@ -110,11 +110,11 @@ run it from outside Databricks instead, see
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `history_table` | `str` | Yes | — | Full **3-part** name (`catalog.schema.table`) used in every dataset's `FROM`. |
-| `catalog` | `str` | Yes | — | Value for the `WHERE catalog = '...'` filter in every query. |
-| `parent_path` | `str` | Yes | — | Workspace folder to create the dashboard in (create mode). |
-| `layers` | `dict[str, list[str]]` | Yes | — | Medallion tier → schema(s). See [`layers`](#layers). |
-| `expected_tables` | `list[tuple[str, str]]` | Yes | — | `(schema, table)` pairs scoping the whole dashboard. See [contract](#the-expected_tables-contract). |
+| `history_table` | `str` | Yes | (none) | Full **3-part** name (`catalog.schema.table`) used in every dataset's `FROM`. |
+| `parent_path` | `str` | Yes | (none) | Workspace folder to create the dashboard in (create mode). |
+| `layers` | `dict[str, list[str] \| dict]` | Yes | (none) | Medallion tier → schema(s), optionally per-catalog. See [`layers`](#layers). |
+| `expected_tables` | `list[tuple[str, str] \| tuple[str, str, str]]` | Yes | (none) | `(schema, table)` pairs (catalog resolved from `layers`) or `(catalog, schema, table)` triples, scoping the whole dashboard. See [contract](#the-expected_tables-contract). |
+| `catalog` | `str \| None` | No | `None` | Global catalog for list-form `layers` entries. Required only if at least one tier is a plain schema list. See [`layers`](#layers). |
 | `warehouse_id` | `str \| None` | No | `None` | SQL warehouse for the dashboard + query validation. If omitted, the first **RUNNING** warehouse is auto-discovered. See [note](#warehouse-auto-discovery). |
 | `display_name` | `str` | No | `"DQ Dashboard"` | Dashboard title. |
 | `dashboard_id` | `str \| None` | No | `None` | Existing dashboard to patch (required for `mode="update"`). |
@@ -133,26 +133,71 @@ create/patch payload as a pure function, useful for inspection and testing.
 
 Maps each **medallion tier** to the schema(s) that belong to it. The three tiers
 `bronze` / `silver` / `gold` are the dashboard's fixed structure (one coverage
-pie and a layer axis per tier), but which schemas map to each tier is entirely
-up to you.
+pie and a layer axis per tier), but which schemas (and which **catalog**) map
+to each tier is entirely up to you.
+
+Each tier is given in one of two forms:
 
 ```python
 layers = {
-    "bronze": ["raw"],              # one schema
+    # list form: these schemas live in the global `catalog` argument
+    "bronze": ["raw"],
     "silver": ["clean"],
-    "gold":   ["mart", "marts"],    # a tier may span multiple schemas
+    # dict form: this tier lives in its own catalog
+    "gold":   {"catalog": "mart_catalog", "schemas": ["mart", "marts"]},
 }
 ```
 
+- **Same catalog, different schemas per tier**: use the list form for every
+  tier and pass a single global `catalog`. (This is the original behaviour; the
+  `catalog` argument is unchanged.)
+- **Separate catalog per tier**: use the dict form for the tiers that live
+  elsewhere. `catalog` is then needed only if some tier still uses the list form.
+
 Rules:
 
-- All three tiers **must** be present, each mapped to a **non-empty** list.
+- At least **one** tier must be present; tiers are otherwise **optional**: a
+  bronze-only dashboard is valid. Absent tiers simply render empty widgets (their
+  coverage pie shows no data) rather than being removed.
+- Each present tier must map to a **non-empty** schema list.
 - No tier outside `bronze` / `silver` / `gold` is allowed.
-- Schema names must not contain quotes (rejected as invalid input).
+- Catalog and schema names must not contain quotes (rejected as invalid input).
+- A schema name **may** be declared under two different catalogs (e.g. a `raw`
+  schema in both `bronze_cat` and `silver_cat`). The `(catalog, schema)` scope
+  keeps them distinct. When this happens, reference those tables in
+  `expected_tables` with the explicit `(catalog, schema, table)` triple — a plain
+  `(schema, table)` pair would be ambiguous and is rejected. See
+  [the contract](#the-expected_tables-contract).
 
-`layers` drives: the `schema IN (...)` filters, the schema→layer `CASE` maps
-(including Great-Expectations rows folded into tiers), and the per-tier coverage
-pies.
+`layers` drives: the `(catalog, schema)` scope filter, the (catalog, schema)→layer
+`CASE` maps (including Great-Expectations rows folded into tiers), and the
+per-tier coverage pies.
+
+!!! example "Bronze-only, single catalog"
+    ```python
+    generate_dashboard(
+        history_table="my_catalog.dq.dq_test_history",
+        catalog="my_catalog",
+        parent_path="/Users/you@org",
+        layers={"bronze": ["raw"]},
+        expected_tables=[("raw", "ingestion")],
+    )
+    ```
+
+!!! example "Each tier in its own catalog"
+    ```python
+    generate_dashboard(
+        history_table="meta.dq.dq_test_history",
+        parent_path="/Users/you@org",
+        layers={
+            "bronze": {"catalog": "bronze_cat", "schemas": ["raw"]},
+            "silver": {"catalog": "silver_cat", "schemas": ["clean"]},
+            "gold":   {"catalog": "gold_cat",   "schemas": ["mart"]},
+        },
+        expected_tables=[("raw", "ingestion"), ("clean", "events"), ("mart", "orders")],
+        # no global `catalog` needed: every tier carries its own
+    )
+    ```
 
 ---
 
@@ -169,12 +214,31 @@ expected_tables = [
 ]
 ```
 
-- Each entry is a `(schema, table)` tuple. The list must be **non-empty**.
-- A predicate `AND CONCAT(schema, '.', table) IN (...)` is injected into every
-  dataset's base scan, so **all** widgets (status, KPIs, dimensions, trends,
-  regression, coverage) report on exactly this set.
+- Each entry is either a `(schema, table)` pair or a `(catalog, schema, table)`
+  triple (the two forms may be mixed in one list). The list must be **non-empty**.
+  For a pair, the schema's catalog is resolved automatically from `layers`, so you
+  don't repeat it. For a triple you give the catalog explicitly.
+- A predicate `AND CONCAT(catalog, '.', schema, '.', table) IN (...)` is injected
+  into every dataset's base scan, so **all** widgets (status, KPIs, dimensions,
+  trends, regression, coverage) report on exactly this set, correctly even when
+  the same `schema.table` name exists in more than one catalog.
 - The **coverage pies** additionally treat this list as "should exist": a listed
   table that was never tested shows as *not covered*.
+
+!!! info "When to use the triple"
+    Use `(schema, table)` for the common case — one catalog per schema, resolved
+    from `layers`. Use `(catalog, schema, table)` when the **same schema name**
+    lives in more than one catalog (e.g. a `raw` schema in both `bronze_cat` and
+    `silver_cat`): a bare pair can't tell which one you mean and is rejected as
+    *ambiguous*, so name the catalog explicitly.
+
+    ```python
+    expected_tables = [
+        ("mart", "orders"),                 # catalog resolved from layers
+        ("bronze_cat", "raw", "ingestion"), # explicit — `raw` exists in 2 catalogs
+        ("silver_cat", "raw", "cleaned"),
+    ]
+    ```
 
 !!! tip "Keep the list curated"
     A table you omit is completely absent from every widget, not merely excluded
@@ -182,8 +246,9 @@ expected_tables = [
     catalogue of tables under DQ.
 
 !!! note "Schema names in `expected_tables`"
-    The `schema` in each pair must be one of the schemas you listed under
-    `layers` (that's how a table gets a tier for the coverage pies).
+    Every entry must map to a `(catalog, schema)` you declared under `layers` —
+    that's how a table gets a tier for the coverage pies. A pair's schema must be
+    declared in `layers`; a triple's full `(catalog, schema)` must be too.
 
 ---
 
@@ -299,7 +364,7 @@ whole dumps an unreadable wall of text):
 
 ```python
 result = generate_dashboard(...)
-print(result["url"])   # clean, one-line link — safe to print whole
+print(result["url"])   # clean, one-line link, safe to print whole
 ```
 
 ---
@@ -314,7 +379,7 @@ Every dataset reads from the single `history_table`. It must expose at least:
 | `test_suite` | string | `bronze` / `silver` / `gold` / `great_expectations` |
 | `catalog`, `schema`, `table`, `column` | string | Entity coordinates + `expected_tables` matching |
 | `check_name` | string | Classified into DQ dimensions |
-| `severity`, `blocking`, `passed`, `status` | — | Pass/fail, blocking-failure metrics |
+| `severity`, `blocking`, `passed`, `status` | (none) | Pass/fail, blocking-failure metrics |
 
 !!! note "Sparse JSON fields"
     The Execution Duration trend depends on `execution:duration_ms`, which is

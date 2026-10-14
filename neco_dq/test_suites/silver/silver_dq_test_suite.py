@@ -48,17 +48,17 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
         Verify no duplicate records exist based on key column(s).
 
         Config:
-            key_column: Column name or comma-separated list of columns to check for uniqueness (required)
+            key_columns: Column name or comma-separated list of columns to check for uniqueness (required)
             threshold: Optional threshold configuration
                 max_failure_percent: Maximum allowed percentage of duplicate keys (0-100)
                 max_failure_count: Maximum allowed number of duplicate keys
         """
         start_time = datetime.now(UTC)
-        ok, err = self._require_cfg(cfg, "key_column")
+        ok, err = self._require_cfg(cfg, "key_columns")
         if not ok:
             return False, err, None
 
-        key_cols = cfg["key_column"]
+        key_cols = cfg["key_columns"]
         if isinstance(key_cols, str):
             key_cols = [k.strip() for k in key_cols.split(",")]
 
@@ -139,7 +139,7 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
         Verify status transitions follow an allowed sequential flow.
 
         Config:
-            key_column: Column identifying the entity (required)
+            key_columns: Column identifying the entity (required)
             status_column: Column containing the status value (required)
             timestamp_column: Column for ordering transitions chronologically (required)
             allowed_flow: List of statuses in valid progression order (e.g., ["pending", "active", "completed"])
@@ -148,12 +148,12 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
                 max_failure_count: Maximum allowed number of invalid transitions
         """
         start_time = datetime.now(UTC)
-        ok, err = self._require_cfg(cfg, "key_column", "status_column", "timestamp_column")
+        ok, err = self._require_cfg(cfg, "key_columns", "status_column", "timestamp_column")
         if not ok:
             return False, err, None
 
         flow = cfg.get("allowed_flow", [])
-        key_col = cfg["key_column"]
+        key_col = cfg["key_columns"]
         status_col = cfg["status_column"]
         ts_col = cfg["timestamp_column"]
 
@@ -247,7 +247,7 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
                 table_fq=self._current_table_fq,
                 affected_columns=[cfg["status_column"]],
                 cfg={
-                    "key_column": cfg["key_column"],
+                    "key_column": cfg["key_columns"],
                     "status_column": cfg["status_column"],
                     "timestamp_column": cfg["timestamp_column"],
                 },
@@ -277,35 +277,40 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
         Verify foreign key references exist in target table.
 
         Config:
-            schema: Source table schema (required)
-            table: Source table name (required)
+            source_schema: Source table schema (default: current table's schema)
+            source_table: Source table name (default: current table's table)
+            source_catalog: Catalog for source/target tables (default: current table's catalog)
             source_column: Column in source table containing foreign key (required)
-            target_schema: Target table schema (required)
-            target_table: Target table name (required)
-            target_column: Column in target table to match against (required)
-            min_valid_ratio: Minimum ratio of valid references (default: 1.0)
-            catalog: Catalog for source/target tables (default: current table's catalog)
+            target: Nested {catalog, schema, table, column} block for the target
+                table (required). ``catalog`` defaults to the source catalog.
+            min_valid_percent: Minimum percent (0-100) of valid references (default: 100)
         """
         start_time = datetime.now(UTC)
-        ok, err = self._require_cfg(
-            cfg, "schema", "table", "source_column", "target_schema", "target_table", "target_column"
-        )
+        ok, err = self._require_cfg(cfg, "source_column", "target")
         if not ok:
             return False, err, None
 
-        catalog = cfg.get("catalog", table_ctx["catalog"])
-        src_fq = f"{catalog}.{cfg['schema']}.{cfg['table']}"
-        tgt_fq = f"{catalog}.{cfg['target_schema']}.{cfg['target_table']}"
+        target = cfg["target"] if isinstance(cfg.get("target"), dict) else {}
+        tgt_missing = [k for k in ("schema", "table", "column") if not target.get(k)]
+        if tgt_missing:
+            return False, self._details_config_missing(*(f"target.{k}" for k in tgt_missing)), None
+        target_column = target["column"]
+
+        catalog = cfg.get("source_catalog", table_ctx["catalog"])
+        src_schema = cfg.get("source_schema", table_ctx["schema"])
+        src_table = cfg.get("source_table", table_ctx["table"])
+        src_fq = f"{catalog}.{src_schema}.{src_table}"
+        tgt_fq = f"{target.get('catalog', catalog)}.{target['schema']}.{target['table']}"
         src = self.spark.table(src_fq)
         tgt = self.spark.table(tgt_fq)
 
         total = src.count() or 1
-        orphans = src.join(tgt, src[cfg["source_column"]] == tgt[cfg["target_column"]], "left_anti")
+        orphans = src.join(tgt, src[cfg["source_column"]] == tgt[target_column], "left_anti")
         invalid = orphans.count()
 
         ratio = 1 - invalid / total
-        min_ratio = cfg.get("min_valid_ratio", 1.0)
-        passed = ratio >= min_ratio
+        min_percent = cfg.get("min_valid_percent", 100.0)
+        passed = ratio * 100 >= min_percent
 
         failure_stats = None
         investigation_query = None
@@ -321,7 +326,7 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
                 extra={
                     "reference_info": {
                         "target_table": tgt_fq,
-                        "target_column": cfg["target_column"],
+                        "target_column": target_column,
                     },
                 },
                 diagnostic={
@@ -335,7 +340,7 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
                 affected_columns=[cfg["source_column"]],
                 cfg={
                     "fk_column": cfg["source_column"],
-                    "pk_column": cfg["target_column"],
+                    "pk_column": target_column,
                     "target_table": tgt_fq,
                 },
                 where_clause=self._current_where_clause,
@@ -365,7 +370,7 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
 
         Config:
             group_by: Column or list of columns to group by (required)
-            min: Minimum number of rows per group (default: 1)
+            min_count: Minimum number of rows per group (default: 1)
             threshold: Optional threshold configuration
                 max_failure_percent: Maximum allowed percentage of violated groups (0-100)
                 max_failure_count: Maximum allowed number of violated groups
@@ -376,7 +381,7 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
             return False, self._details_config_missing("group_by"), None
 
         gb_cols = [gb] if isinstance(gb, str) else gb
-        min_count = cfg.get("min", 1)
+        min_count = cfg.get("min_count", 1)
         total_rows = df.count()
 
         grouped = df.groupBy(*gb_cols).count()
@@ -440,27 +445,27 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
         Config:
             detail_schema: Schema of detail table (required)
             detail_table: Name of detail table (required)
-            join_key: Column to join header and detail tables (required)
+            join_columns: Column to join header and detail tables (required)
             detail_amount_column: Column in detail table to sum (required)
             header_amount_column: Column in header table to compare against (required)
-            tolerance: Allowed numeric difference (default: 0.0)
-            catalog: Catalog for detail table (default: current table's catalog)
+            tolerance_abs: Allowed numeric difference (default: 0.0)
+            detail_catalog: Catalog for detail table (default: current table's catalog)
         """
         start_time = datetime.now(UTC)
         ok, err = self._require_cfg(
-            cfg, "detail_schema", "detail_table", "join_key", "detail_amount_column", "header_amount_column"
+            cfg, "detail_schema", "detail_table", "join_columns", "detail_amount_column", "header_amount_column"
         )
         if not ok:
             return False, err, None
 
-        catalog = cfg.get("catalog", table_ctx["catalog"])
+        catalog = cfg.get("detail_catalog", table_ctx["catalog"])
         detail_fq = f"{catalog}.{cfg['detail_schema']}.{cfg['detail_table']}"
         detail = self.spark.table(detail_fq)
-        sums = detail.groupBy(cfg["join_key"]).agg(sql_sum(cfg["detail_amount_column"]).alias("detail_sum"))
+        sums = detail.groupBy(cfg["join_columns"]).agg(sql_sum(cfg["detail_amount_column"]).alias("detail_sum"))
 
         total_headers = df.count()
-        joined = df.join(sums, cfg["join_key"], "left")
-        tolerance = cfg.get("tolerance", 0.0)
+        joined = df.join(sums, cfg["join_columns"], "left")
+        tolerance = cfg.get("tolerance_abs", 0.0)
         header_amt_col = cfg["header_amount_column"]
 
         # Mismatch conditions:
@@ -486,8 +491,8 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
                 total_checked=total_headers,
                 extra={
                     "detail_table": detail_fq,
-                    "join_key": cfg["join_key"],
-                    "tolerance": cfg.get("tolerance", 0.0),
+                    "join_key": cfg["join_columns"],
+                    "tolerance": cfg.get("tolerance_abs", 0.0),
                 },
             )
 
@@ -496,11 +501,11 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
                 table_fq=self._current_table_fq,
                 affected_columns=[cfg["header_amount_column"]],
                 cfg={
-                    "join_key": cfg["join_key"],
+                    "join_key": cfg["join_columns"],
                     "header_amount": cfg["header_amount_column"],
                     "detail_amount": cfg["detail_amount_column"],
                     "detail_table": detail_fq,
-                    "tolerance": cfg.get("tolerance", 0.0),
+                    "tolerance": cfg.get("tolerance_abs", 0.0),
                 },
                 where_clause=self._current_where_clause,
             )
@@ -528,36 +533,36 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
         Verify column values match between two tables after joining.
 
         Config:
-            left_schema: Schema of left table (required)
-            left_table: Name of left table (required)
+            left_schema: Schema of left table (default: current table's schema)
+            left_table: Name of left table (default: current table's table)
             right_schema: Schema of right table (required)
             right_table: Name of right table (required)
-            join_key: Column to join tables on (required)
+            join_columns: Column to join tables on (required)
             left_column: Column in left table to compare (required)
             right_column: Column in right table to compare (required)
-            tolerance: Allowed numeric difference (default: 0.0)
+            tolerance_abs: Allowed numeric difference (default: 0.0)
             catalog: Catalog for tables (default: current table's catalog)
         """
         start_time = datetime.now(UTC)
-        ok, err = self._require_cfg(
-            cfg, "left_schema", "left_table", "right_schema", "right_table", "join_key", "left_column", "right_column"
-        )
+        ok, err = self._require_cfg(cfg, "right_schema", "right_table", "join_columns", "left_column", "right_column")
         if not ok:
             return False, err, None
 
         catalog = cfg.get("catalog", table_ctx["catalog"])
-        left_fq = f"{catalog}.{cfg['left_schema']}.{cfg['left_table']}"
+        left_schema = cfg.get("left_schema", table_ctx["schema"])
+        left_table = cfg.get("left_table", table_ctx["table"])
+        left_fq = f"{catalog}.{left_schema}.{left_table}"
         right_fq = f"{catalog}.{cfg['right_schema']}.{cfg['right_table']}"
         left = self.spark.table(left_fq)
         right = self.spark.table(right_fq)
 
         joined = left.alias("l").join(
-            right.alias("r"), col(f"l.{cfg['join_key']}") == col(f"r.{cfg['join_key']}"), "inner"
+            right.alias("r"), col(f"l.{cfg['join_columns']}") == col(f"r.{cfg['join_columns']}"), "inner"
         )
         total_joined = joined.count()
 
         mismatches = joined.filter(
-            sql_abs(col(f"l.{cfg['left_column']}") - col(f"r.{cfg['right_column']}")) > cfg.get("tolerance", 0.0)
+            sql_abs(col(f"l.{cfg['left_column']}") - col(f"r.{cfg['right_column']}")) > cfg.get("tolerance_abs", 0.0)
         )
 
         count = mismatches.count()
@@ -574,8 +579,8 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
                 extra={
                     "left_table": left_fq,
                     "right_table": right_fq,
-                    "join_key": cfg["join_key"],
-                    "tolerance": cfg.get("tolerance", 0.0),
+                    "join_key": cfg["join_columns"],
+                    "tolerance": cfg.get("tolerance_abs", 0.0),
                 },
             )
 
@@ -584,12 +589,12 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
                 table_fq=left_fq,
                 affected_columns=[cfg["left_column"]],
                 cfg={
-                    "join_key": cfg["join_key"],
+                    "join_key": cfg["join_columns"],
                     "left_column": cfg["left_column"],
                     "right_column": cfg["right_column"],
                     "left_table": left_fq,
                     "right_table": right_fq,
-                    "tolerance": cfg.get("tolerance", 0.0),
+                    "tolerance": cfg.get("tolerance_abs", 0.0),
                 },
                 where_clause=self._current_where_clause,
             )
@@ -617,41 +622,41 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
         Verify timestamp ordering between two tables (left timestamp must be <= right timestamp).
 
         Config:
-            left_schema: Schema of left table (required)
-            left_table: Name of left table (required)
+            left_schema: Schema of left table (default: current table's schema)
+            left_table: Name of left table (default: current table's table)
             right_schema: Schema of right table (required)
             right_table: Name of right table (required)
-            join_key: Column to join tables on (required)
-            left_timestamp: Timestamp column in left table (required)
-            right_timestamp: Timestamp column in right table (required)
+            join_columns: Column to join tables on (required)
+            left_timestamp_column: Timestamp column in left table (required)
+            right_timestamp_column: Timestamp column in right table (required)
             catalog: Catalog for tables (default: current table's catalog)
         """
         start_time = datetime.now(UTC)
         ok, err = self._require_cfg(
             cfg,
-            "left_schema",
-            "left_table",
             "right_schema",
             "right_table",
-            "join_key",
-            "left_timestamp",
-            "right_timestamp",
+            "join_columns",
+            "left_timestamp_column",
+            "right_timestamp_column",
         )
         if not ok:
             return False, err, None
 
         catalog = cfg.get("catalog", table_ctx["catalog"])
-        left_fq = f"{catalog}.{cfg['left_schema']}.{cfg['left_table']}"
+        left_schema = cfg.get("left_schema", table_ctx["schema"])
+        left_table = cfg.get("left_table", table_ctx["table"])
+        left_fq = f"{catalog}.{left_schema}.{left_table}"
         right_fq = f"{catalog}.{cfg['right_schema']}.{cfg['right_table']}"
         left = self.spark.table(left_fq)
         right = self.spark.table(right_fq)
 
         joined = left.alias("l").join(
-            right.alias("r"), col(f"l.{cfg['join_key']}") == col(f"r.{cfg['join_key']}"), "inner"
+            right.alias("r"), col(f"l.{cfg['join_columns']}") == col(f"r.{cfg['join_columns']}"), "inner"
         )
         total_joined = joined.count()
 
-        violations = joined.filter(col(f"l.{cfg['left_timestamp']}") > col(f"r.{cfg['right_timestamp']}"))
+        violations = joined.filter(col(f"l.{cfg['left_timestamp_column']}") > col(f"r.{cfg['right_timestamp_column']}"))
         count = violations.count()
         passed = count == 0
 
@@ -660,24 +665,24 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
         if not passed and count > 0:
             failure_stats = self._build_failure_stats(
                 failure_type="temporal_violation",
-                affected_columns=[cfg["left_timestamp"], cfg["right_timestamp"]],
+                affected_columns=[cfg["left_timestamp_column"], cfg["right_timestamp_column"]],
                 failure_count=count,
                 total_checked=total_joined,
                 extra={
                     "left_table": left_fq,
                     "right_table": right_fq,
-                    "join_key": cfg["join_key"],
+                    "join_key": cfg["join_columns"],
                 },
             )
 
             investigation_query = self._build_investigation_query(
                 check_type="temporal_violation",
                 table_fq=left_fq,
-                affected_columns=[cfg["left_timestamp"]],
+                affected_columns=[cfg["left_timestamp_column"]],
                 cfg={
-                    "join_key": cfg["join_key"],
-                    "left_timestamp": cfg["left_timestamp"],
-                    "right_timestamp": cfg["right_timestamp"],
+                    "join_key": cfg["join_columns"],
+                    "left_timestamp": cfg["left_timestamp_column"],
+                    "right_timestamp": cfg["right_timestamp_column"],
                     "left_table": left_fq,
                     "right_table": right_fq,
                 },
@@ -700,26 +705,26 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
         self._last_investigation_query = investigation_query
         self._last_execution = execution
 
-        return passed, details, cfg["left_timestamp"]
+        return passed, details, cfg["left_timestamp_column"]
 
     def _check_row_temporal_consistency(self, df, cfg: dict) -> tuple[bool, str, str | None]:
         """
         Verify timestamp ordering within same row (left timestamp must be >= right timestamp).
 
         Config:
-            left_timestamp: First timestamp column (required)
-            right_timestamp: Second timestamp column (required)
+            left_timestamp_column: First timestamp column (required)
+            right_timestamp_column: Second timestamp column (required)
             threshold: Optional threshold configuration
                 max_failure_percent: Maximum allowed percentage of violations (0-100)
                 max_failure_count: Maximum allowed number of violations
         """
         start_time = datetime.now(UTC)
-        ok, err = self._require_cfg(cfg, "left_timestamp", "right_timestamp")
+        ok, err = self._require_cfg(cfg, "left_timestamp_column", "right_timestamp_column")
         if not ok:
             return False, err, None
 
         total_count = df.count()
-        violations = df.filter(col(cfg["left_timestamp"]) < col(cfg["right_timestamp"]))
+        violations = df.filter(col(cfg["left_timestamp_column"]) < col(cfg["right_timestamp_column"]))
         failed_count = violations.count()
 
         # Evaluate with threshold
@@ -730,7 +735,7 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
         if not passed and failed_count > 0:
             failure_stats = self._build_failure_stats(
                 failure_type="row_temporal_violation",
-                affected_columns=[cfg["left_timestamp"], cfg["right_timestamp"]],
+                affected_columns=[cfg["left_timestamp_column"], cfg["right_timestamp_column"]],
                 failure_count=failed_count,
                 total_checked=total_count,
             )
@@ -738,10 +743,10 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
             investigation_query = self._build_investigation_query(
                 check_type="row_temporal_violation",
                 table_fq=self._current_table_fq,
-                affected_columns=[cfg["left_timestamp"], cfg["right_timestamp"]],
+                affected_columns=[cfg["left_timestamp_column"], cfg["right_timestamp_column"]],
                 cfg={
-                    "left_timestamp": cfg["left_timestamp"],
-                    "right_timestamp": cfg["right_timestamp"],
+                    "left_timestamp": cfg["left_timestamp_column"],
+                    "right_timestamp": cfg["right_timestamp_column"],
                 },
                 where_clause=self._current_where_clause,
             )
@@ -762,7 +767,7 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
         self._last_investigation_query = investigation_query
         self._last_execution = execution
 
-        return passed, details, cfg["left_timestamp"]
+        return passed, details, cfg["left_timestamp_column"]
 
     def _check_flow_completeness(self, cfg: dict, table_ctx: dict) -> tuple[bool, str, str | None]:
         """
@@ -771,13 +776,13 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
         Config:
             source_schema: Schema of source table (required)
             source_table: Name of source table (required)
-            join_key: Column to join source and target (required)
+            join_columns: Column to join source and target (required)
             source_catalog: Catalog of source table (default: current table's catalog)
             source_filter: SQL filter to apply to source (optional)
             target_filter: SQL filter to apply to target (optional)
-            tolerance_pct: Allowed percentage of missing records (default: 0.0)
+            tolerance_percent: Allowed percentage of missing records (default: 0.0)
             lateness: Lateness configuration (optional):
-                column: Timestamp column for lateness calculation
+                timestamp_column: Timestamp column for lateness calculation
                 max_delay_minutes: Maximum allowed delay in minutes
 
         Note: Target table is derived from table_ctx (current table being validated).
@@ -785,7 +790,7 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
         start_time = datetime.now(UTC)
 
         # Validation
-        required = {"source_schema", "source_table", "join_key"}
+        required = {"source_schema", "source_table", "join_columns"}
         missing_keys = required - cfg.keys()
         if missing_keys:
             raise ValueError(f"flow_completeness missing keys: {missing_keys}")
@@ -795,14 +800,14 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
         if illegal:
             raise ValueError(f"flow_completeness must not define target_* keys: {illegal}")
 
-        tolerance_pct = float(cfg.get("tolerance_pct", 0.0))
+        tolerance_pct = float(cfg.get("tolerance_percent", 0.0))
 
         lateness_cfg = cfg.get("lateness")
         lateness_col = None
         max_delay_min = None
 
         if lateness_cfg:
-            lateness_col = lateness_cfg["column"]
+            lateness_col = lateness_cfg["timestamp_column"]
             max_delay_min = int(lateness_cfg["max_delay_minutes"])
 
         # Source
@@ -822,7 +827,7 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
             trg = trg.where(cfg["target_filter"])
 
         # Missing logic
-        missing_df = src.join(trg, cfg["join_key"], "left_anti")
+        missing_df = src.join(trg, cfg["join_columns"], "left_anti")
 
         if lateness_col:
             missing_df = missing_df.withColumn(
@@ -851,7 +856,7 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
         if not passed and total_missing > 0:
             failure_stats = self._build_failure_stats(
                 failure_type="incomplete_flow",
-                affected_columns=[cfg["join_key"]],
+                affected_columns=[cfg["join_columns"]],
                 failure_count=total_missing,
                 total_checked=total_src,
                 diagnostic={
@@ -870,11 +875,11 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
                 investigation_query = self._build_investigation_query(
                     check_type="incomplete_flow_lateness",
                     table_fq=src_fq,
-                    affected_columns=[cfg["join_key"]],
+                    affected_columns=[cfg["join_columns"]],
                     cfg={
                         "source_table": src_fq,
                         "target_table": trg_fq,
-                        "join_key": cfg["join_key"],
+                        "join_key": cfg["join_columns"],
                         "lateness_column": lateness_col,
                         "max_delay_minutes": max_delay_min,
                         "source_filter": f"AND {cfg['source_filter']}" if cfg.get("source_filter") else "",
@@ -885,11 +890,11 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
                 investigation_query = self._build_investigation_query(
                     check_type="incomplete_flow",
                     table_fq=src_fq,
-                    affected_columns=[cfg["join_key"]],
+                    affected_columns=[cfg["join_columns"]],
                     cfg={
                         "source_table": src_fq,
                         "target_table": trg_fq,
-                        "join_key": cfg["join_key"],
+                        "join_key": cfg["join_columns"],
                         "source_filter": f"AND {cfg['source_filter']}" if cfg.get("source_filter") else "",
                     },
                     where_clause=None,
@@ -911,4 +916,4 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
         self._last_investigation_query = investigation_query
         self._last_execution = execution
 
-        return passed, details, cfg["join_key"]
+        return passed, details, cfg["join_columns"]
