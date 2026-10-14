@@ -42,6 +42,9 @@ Homepage = "https://github.com/woven-by-toyota/neco-dq-framework"
 Repository = "https://github.com/woven-by-toyota/neco-dq-framework"
 Issues = "https://github.com/woven-by-toyota/neco-dq-framework/issues"
 
+[tool.setuptools]
+license-files = ["LICENSE", "NOTICE", "LICENSES/*", "THIRD_PARTY_NOTICES.txt"]
+
 [tool.setuptools.dynamic]
 version = { attr = "neco_dq.__version__" }
 
