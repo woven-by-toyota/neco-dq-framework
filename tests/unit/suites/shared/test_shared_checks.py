@@ -820,13 +820,13 @@ class TestJsonSchemaCheck:
     def test_json_schema_binary_column_pass(self, checker, spark):
         """BINARY payloads (raw Kafka value bytes) are decoded to STRING and validated."""
         with allure.step("Setup test data"):
-            payload = b'{"wovenId": "w1", "sessionId": "s1", "startTimeMs": "123"}'
+            payload = b'{"user_id": "u1", "session_id": "s1", "start_time_ms": "123"}'
             data = [(1, bytearray(payload)), (2, bytearray(payload))]
             df = spark.createDataFrame(data, "id INT, value BINARY")
             cfg = {
                 "column": "value",
                 "array_element": False,
-                "required_fields": ["wovenId", "sessionId", "startTimeMs"],
+                "required_fields": ["user_id", "session_id", "start_time_ms"],
             }
 
         with allure.step("Execute function under test"):
@@ -842,13 +842,13 @@ class TestJsonSchemaCheck:
     @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
     def test_json_schema_binary_column_missing_field(self, checker, spark):
         with allure.step("Setup test data"):
-            payload = b'{"wovenId": "w1"}'
+            payload = b'{"user_id": "u1"}'
             data = [(1, bytearray(payload))]
             df = spark.createDataFrame(data, "id INT, value BINARY")
             cfg = {
                 "column": "value",
                 "array_element": False,
-                "required_fields": ["wovenId", "sessionId"],
+                "required_fields": ["user_id", "session_id"],
             }
 
         with allure.step("Execute function under test"):
