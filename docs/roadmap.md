@@ -25,7 +25,7 @@ order can change, and nothing here has a fixed release date.
 
 The current release is a complete data quality framework. In short:
 
-- Around 50 built-in checks across Bronze, Silver, and Gold.
+- Around 35 built-in checks across Bronze, Silver, and Gold.
 - A policy engine that decides, per suite and severity, what blocks a pipeline and what only warns.
 - Great Expectations column contracts running alongside native checks in one report.
 - Custom Python suites for rules the built-ins do not cover.

@@ -1,6 +1,6 @@
 # Parameter Naming Conventions
 
-Every check reads its settings from a YAML block. Across ~40 checks and three
+Every check reads its settings from a YAML block. Across ~35 checks and three
 suites, those settings follow a small set of naming conventions so that a key
 means the same thing wherever it appears. This page is the reference for those
 conventions, for the deprecated keys that were renamed to follow them, and for

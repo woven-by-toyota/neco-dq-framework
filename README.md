@@ -16,7 +16,7 @@
 
 **Neco DQ** is a declarative data quality framework for Databricks, built on Spark and organized around the medallion architecture. You define checks in YAML, one set per layer, and the framework runs them, gates your pipeline on the result, and stores the history.
 
-Neco DQ keeps the setup declarative: ~40 built-in checks covering ingestion, transformation, aggregation, and schema contracts, a policy engine that decides what blocks and what only warns, and [Great Expectations](https://greatexpectations.io/) when you need it. All in one report, one history table, one Slack alert. The same `run_dq()` call runs in a notebook, a scheduled Job, or a DLT pipeline.
+Neco DQ keeps the setup declarative: ~35 built-in checks covering ingestion, transformation, aggregation, and schema contracts, a policy engine that decides what blocks and what only warns, and [Great Expectations](https://greatexpectations.io/) when you need it. All in one report, one history table, one Slack alert. The same `run_dq()` call runs in a notebook, a scheduled Job, or a DLT pipeline.
 
 ```
 ─────────────────────────────────────────────────────────────────────────
@@ -52,7 +52,7 @@ DQ POLICY RESULT → exit_code=20 | DQ completed with ERRORS
 
 ## What it does
 
-- **Layer-aware checks.** Bronze, Silver, and Gold suites, each with checks built for that stage. Around 40 checks in total, from `freshness` and `schema_drift` to `referential_integrity`, `reconciliation_expr`, and `trend`, plus a general-purpose `compare_metric` check for anything the named ones don't cover.
+- **Layer-aware checks.** Bronze, Silver, and Gold suites, each with checks built for that stage. Around 35 checks in total, from `freshness` and `schema_drift` to `referential_integrity`, `reconciliation_expr`, and `trend`, plus a general-purpose `compare_metric` check for anything the named ones don't cover.
 - **YAML configuration.** A single file for small setups, or a modular directory that splits policy, suites, and per-table groups as the config grows.
 - **Pipeline gating.** A policy engine turns results into an exit code. Every check has a severity and a blocking flag, so you decide what stops a pipeline and what only warns. There's also a global failure-rate threshold.
 - **Multi-environment profiles.** Define `dev`, `staging`, and `prod` profiles with their own catalogs, variables, and policy overrides. Configs reference them through Jinja2 (`{{ var.name }}`), so the same config runs everywhere.
