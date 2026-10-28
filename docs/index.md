@@ -20,7 +20,7 @@ history. The same configuration runs unchanged in a notebook, a scheduled Job, o
 <div class="page-info" markdown>
 <span class="page-info__title">Main features</span>
 
-- **~40 built-in checks** - medallion-aware: Bronze ingestion, Silver correctness, Gold reconciliation.
+- **~35 built-in checks** - medallion-aware: Bronze ingestion, Silver correctness, Gold reconciliation.
 - **Policy engine** - decides what blocks the pipeline vs what only warns, per suite and severity.
 - **Great Expectations, integrated** - run GE column contracts alongside native checks, in one report.
 - **Custom suites** - write your own checks in Python when the built-ins don't cover a rule.

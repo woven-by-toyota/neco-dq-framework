@@ -8,7 +8,7 @@ silver:
       checks:
 
         idempotency:
-          key_column:
+          key_columns:
           {% if t.pk_id is string %}
             {{ t.pk_id }}
           {% else %}
@@ -21,7 +21,7 @@ silver:
 
 {% if t.status_column is defined %}
         status_transition:
-          key_column:
+          key_columns:
           {% if t.pk_id is string %}
             {{ t.pk_id }}
           {% else %}

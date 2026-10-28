@@ -627,6 +627,49 @@ class TestBronzeBinaryDecodable:
             assert "protobuf" in details.lower()
             assert column == "payload"
 
+    @allure.title("Binary decodable passes with valid base64-encoded JSON")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)
+    def test_binary_decodable_base64_json_pass(self, bronze_suite, df_base64_json):
+        """base64_json should pass when values decode from base64 to a JSON object."""
+        with allure.step("Setup test data"):
+            cfg = {"column": "payload", "format": "base64_json"}
+
+        with allure.step("Execute binary decodable check"):
+            passed, details, column = bronze_suite._check_binary_decodable(df_base64_json, cfg)
+
+        with allure.step("Verify: base64_json passes with valid encoded JSON"):
+            assert passed is True
+            assert "decodable" in details.lower()
+            assert column == "payload"
+
+    @allure.title("Binary decodable counts malformed base64 as failure (no crash under ANSI)")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
+    def test_binary_decodable_base64_json_malformed_is_counted(self, bronze_suite, df_plain_json_string):
+        """Regression: malformed base64 must be counted as a failure, not raise.
+
+        Under ANSI/Photon strict mode ``unbase64`` raises CONVERSION_INVALID_INPUT on
+        non-base64 input, crashing the whole check. With ``try_to_binary`` the row is
+        counted as a decode failure and evaluated against the threshold instead.
+        """
+        spark = bronze_suite.spark
+        prev_ansi = spark.conf.get("spark.sql.ansi.enabled", "false")
+        spark.conf.set("spark.sql.ansi.enabled", "true")
+        try:
+            with allure.step("Setup test data and enable ANSI strict mode"):
+                cfg = {"column": "payload", "format": "base64_json"}
+
+            with allure.step("Execute binary decodable check (must not raise)"):
+                passed, details, column = bronze_suite._check_binary_decodable(df_plain_json_string, cfg)
+        finally:
+            spark.conf.set("spark.sql.ansi.enabled", prev_ansi)
+
+        with allure.step("Verify: malformed rows counted as failures, not an error"):
+            assert passed is False
+            assert column == "payload"
+            assert "error" not in details.lower()
+
 
 @allure.feature(AllureFeature.BRONZE_SUITE)
 @allure.story(AllureStory.BINARY_VERSION_HEADER)
@@ -794,3 +837,76 @@ class TestBronzeBinarySchemaFingerprint:
             assert passed is False
             assert "Missing config" in details
             assert column == "payload"
+
+
+# =============================================================================
+# Shared Check Mixins on Bronze (Option A composition)
+# =============================================================================
+
+
+@allure.feature(AllureFeature.BRONZE_SUITE)
+@allure.story(AllureStory.JSON_SCHEMA)
+class TestBronzeJsonSchema:
+    """json_schema is composed onto Bronze via JsonSchemaCheckMixin."""
+
+    @allure.title("Bronze json_schema passes with valid required fields")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)
+    def test_bronze_json_schema_pass(self, spark, bronze_suite):
+        with allure.step("Setup test data"):
+            df = spark.createDataFrame(
+                [('{"code": "A", "value": 1}',), ('{"code": "B", "value": 2}',)],
+                ["items"],
+            )
+            cfg = {"column": "items", "required_fields": ["code", "value"]}
+
+        with allure.step("Execute json_schema check on Bronze"):
+            passed, details, column = bronze_suite._check_json_schema(df, cfg)
+
+        with allure.step("Verify: json_schema passes on Bronze"):
+            assert passed is True
+            assert column == "items"
+            assert "JSON schema OK" in details
+
+
+@allure.feature(AllureFeature.BRONZE_SUITE)
+@allure.story(AllureStory.BUSINESS_RULES)
+class TestBronzeBusinessRules:
+    """business_rules is composed onto Bronze via BusinessRulesCheckMixin."""
+
+    @allure.title("Bronze business_rules passes when all rows satisfy predicate")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)
+    def test_bronze_business_rules_pass(self, spark, bronze_suite):
+        with allure.step("Setup test data"):
+            df = spark.createDataFrame([(1, "active"), (2, "inactive")], ["id", "status"])
+            cfg = {"predicate": "status IN ('active', 'inactive')", "name": "valid_status"}
+
+        with allure.step("Execute business_rules check on Bronze"):
+            passed, details, _ = bronze_suite._check_business_rules(df, cfg)
+
+        with allure.step("Verify: business_rules passes on Bronze"):
+            assert passed is True
+            assert "passed" in details
+
+
+@allure.feature(AllureFeature.BRONZE_SUITE)
+@allure.story(AllureStory.SUITE_IDENTITY)
+class TestBronzeSharedCheckSurface:
+    """Option A exposes exactly json_schema + business_rules on Bronze (no leak)."""
+
+    @allure.title("Bronze exposes json_schema and business_rules")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.POSITIVE)
+    def test_bronze_exposes_two_shared_checks(self, bronze_suite):
+        with allure.step("Verify: both intended shared checks are present"):
+            assert hasattr(bronze_suite, "_check_json_schema")
+            assert hasattr(bronze_suite, "_check_business_rules")
+
+    @allure.title("Bronze does not leak the Silver/Gold-only shared checks")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.NEGATIVE)
+    def test_bronze_no_shared_check_leak(self, bronze_suite):
+        with allure.step("Verify: distinct_count / compare_metric are NOT exposed on Bronze"):
+            assert not hasattr(bronze_suite, "_check_distinct_count")
+            assert not hasattr(bronze_suite, "_check_compare_metric")

@@ -59,8 +59,9 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
         """
         Metric-level reconciliation between Gold and Silver.
 
-        The expressions provided in `gold` and `silver` MUST be fully-aggregated
-        Spark SQL expressions (e.g. COUNT(*), COUNT(DISTINCT id), SUM(metric)).
+        The expressions provided in `gold_expr` and `silver_expr` MUST be
+        fully-aggregated Spark SQL expressions (e.g. COUNT(*), COUNT(DISTINCT id),
+        SUM(metric)).
 
         Supports:
         - optional filters per layer
@@ -68,23 +69,30 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
         - optional join_filter to restrict Silver rows to Gold domain
         """
         start_time = datetime.now(UTC)
-        ok, err = self._require_cfg(cfg, "source_silver", "gold", "silver")
+        ok, err = self._require_cfg(cfg, "silver", "gold_expr", "silver_expr")
         if not ok:
             return False, err, None
 
         # ------------------------------------------------------------------
         # Config
         # ------------------------------------------------------------------
-        silver_table = cfg["source_silver"]
+        silver_block = cfg["silver"] if isinstance(cfg.get("silver"), dict) else {}
+        if not silver_block.get("table"):
+            return False, self._details_config_missing("silver.table"), None
+        silver_table = ".".join(
+            str(p) for p in (silver_block.get("catalog"), silver_block.get("schema"), silver_block["table"]) if p
+        )
         df_silver = self.spark.table(silver_table)
 
-        gold_expr = cfg["gold"]
-        silver_expr = cfg["silver"]
-        tolerance_pct = float(cfg.get("tolerance", 1.0))
+        gold_expr = cfg["gold_expr"]
+        silver_expr = cfg["silver_expr"]
+        tolerance_pct = float(cfg.get("tolerance_percent", 1.0))
 
-        filters = cfg.get("filter", {})
+        gold_filter = cfg.get("gold_filter")
+        silver_filter = cfg.get("silver_filter")
         group_by = cfg.get("group_by", [])
-        join_filter = cfg.get("join_filter")
+        gold_join_col = cfg.get("gold_join_columns")
+        silver_join_col = cfg.get("silver_join_columns")
         name = cfg.get("name")
 
         g_df, s_df = df_gold, df_silver
@@ -93,16 +101,13 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
         # ------------------------------------------------------------------
         # Optional domain restriction (Gold → Silver)
         # ------------------------------------------------------------------
-        if join_filter:
-            g_col = join_filter["gold_column"]
-            s_col = join_filter["silver_column"]
-
+        if gold_join_col and silver_join_col:
             # Extract distinct gold IDs with consistent column name for join
-            gold_ids = g_df.select(f.col(g_col).cast("string").alias("_join_key")).distinct()
+            gold_ids = g_df.select(f.col(gold_join_col).cast("string").alias("_join_key")).distinct()
 
             # Cast silver column and join on the common key
             s_df = (
-                s_df.withColumn("_join_key", f.col(s_col).cast("string"))
+                s_df.withColumn("_join_key", f.col(silver_join_col).cast("string"))
                 .join(gold_ids, "_join_key", "inner")
                 .drop("_join_key")
             )
@@ -110,11 +115,11 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
         # ------------------------------------------------------------------
         # Optional filters
         # ------------------------------------------------------------------
-        if "gold" in filters:
-            g_df = g_df.filter(f.expr(filters["gold"]))
+        if gold_filter:
+            g_df = g_df.filter(f.expr(gold_filter))
 
-        if "silver" in filters:
-            s_df = s_df.filter(f.expr(filters["silver"]))
+        if silver_filter:
+            s_df = s_df.filter(f.expr(silver_filter))
 
         # ------------------------------------------------------------------
         # Grouped reconciliation
@@ -180,10 +185,10 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
                 gold_filter_parts = []
                 if self._current_where_clause:
                     gold_filter_parts.append(self._current_where_clause)
-                if filters.get("gold"):
-                    gold_filter_parts.append(filters["gold"])
+                if gold_filter:
+                    gold_filter_parts.append(gold_filter)
                 gold_where = f" WHERE {' AND '.join(gold_filter_parts)}" if gold_filter_parts else ""
-                silver_where = f" WHERE {filters['silver']}" if filters.get("silver") else ""
+                silver_where = f" WHERE {silver_filter}" if silver_filter else ""
                 investigation_query = {
                     "description": "Find groups with reconciliation mismatch",
                     "query": f"WITH gold AS (SELECT {', '.join(group_by)}, {gold_expr} as gold_value FROM {self._current_table_fq}{gold_where} GROUP BY {', '.join(group_by)}), silver AS (SELECT {', '.join(group_by)}, {silver_expr} as silver_value FROM {silver_table}{silver_where} GROUP BY {', '.join(group_by)}) SELECT g.*, s.silver_value, ABS(g.gold_value - s.silver_value) / NULLIF(s.silver_value, 0) * 100 as diff_pct FROM gold g JOIN silver s USING ({', '.join(group_by)}) WHERE ABS(g.gold_value - s.silver_value) / NULLIF(s.silver_value, 0) * 100 > {tolerance_pct} ORDER BY diff_pct DESC LIMIT 100",
@@ -247,10 +252,10 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
             gold_filter_parts = []
             if self._current_where_clause:
                 gold_filter_parts.append(self._current_where_clause)
-            if filters.get("gold"):
-                gold_filter_parts.append(filters["gold"])
+            if gold_filter:
+                gold_filter_parts.append(gold_filter)
             gold_where = f" WHERE {' AND '.join(gold_filter_parts)}" if gold_filter_parts else ""
-            silver_where = f" WHERE {filters['silver']}" if filters.get("silver") else ""
+            silver_where = f" WHERE {silver_filter}" if silver_filter else ""
             investigation_query = {
                 "description": "Verify reconciliation values",
                 "query": f"SELECT '{gold_expr}' as metric, ({gold_expr}) as gold_value FROM {self._current_table_fq}{gold_where} UNION ALL SELECT '{silver_expr}' as metric, ({silver_expr}) as silver_value FROM {silver_table}{silver_where}",
@@ -416,14 +421,15 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
         Verify coverage between Gold and Silver tables.
 
         Config:
-            silver_table: Fully qualified Silver table name
+            silver: Nested {catalog, schema, table} block for the Silver table
+                (required). ``catalog`` is optional.
             gold_expr: SQL expression for Gold aggregation
             silver_expr: SQL expression for Silver aggregation
-            tolerance_pct: Allowed percentage difference (default: 1.0)
+            tolerance_percent: Allowed percentage difference (default: 1.0)
             join_type: Type of join (left, inner, outer) (default: left)
-            join_keys: Columns to join on (optional, for keyed coverage)
-            gold_join_keys: Gold-specific join columns (optional)
-            silver_join_keys: Silver-specific join columns (optional)
+            join_columns: Columns to join on (optional, for keyed coverage)
+            gold_join_columns: Gold-specific join columns (optional)
+            silver_join_columns: Silver-specific join columns (optional)
             silver_filter: SQL filter to apply to Silver (optional)
 
         Supports:
@@ -431,22 +437,35 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
         - Keyed coverage (with join keys): compares per-key aggregates
         """
         start_time = datetime.now(UTC)
-        silver_table = cfg["silver_table"]
-        tol_pct = float(cfg.get("tolerance_pct", 1.0))
+        ok, err = self._require_cfg(cfg, "silver", "gold_expr", "silver_expr")
+        if not ok:
+            return False, err, None
+
+        silver_block = cfg["silver"] if isinstance(cfg.get("silver"), dict) else {}
+        if not silver_block.get("table"):
+            return False, self._details_config_missing("silver.table"), None
+        silver_table = ".".join(
+            str(p) for p in (silver_block.get("catalog"), silver_block.get("schema"), silver_block["table"]) if p
+        )
+        tol_pct = float(cfg.get("tolerance_percent", 1.0))
         join_type = cfg.get("join_type", "left")
 
         # ------------------------------------------------------------------
         # Resolve join keys
         # ------------------------------------------------------------------
-        join_keys = cfg.get("join_keys")
-        gold_keys = cfg.get("gold_join_keys", join_keys)
-        silver_keys = cfg.get("silver_join_keys", join_keys)
+        join_keys = cfg.get("join_columns")
+        gold_keys = cfg.get("gold_join_columns", join_keys)
+        silver_keys = cfg.get("silver_join_columns", join_keys)
 
         if bool(gold_keys) ^ bool(silver_keys):
-            return False, self._details_config_missing("gold_join_keys and silver_join_keys (both required)"), None
+            return (
+                False,
+                self._details_config_missing("gold_join_columns and silver_join_columns (both required)"),
+                None,
+            )
 
         if gold_keys and len(gold_keys) != len(silver_keys):
-            return False, "Invalid config: gold_join_keys and silver_join_keys must have same length", None
+            return False, "Invalid config: gold_join_columns and silver_join_columns must have same length", None
 
         # ------------------------------------------------------------------
         # Load and filter silver
@@ -611,20 +630,20 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
         Config:
             metric: SQL expression for volume metric (e.g., "COUNT(*)", "SUM(amount)")
             group_by: Columns to group by before aggregation (optional)
-            min: Minimum allowed value (optional)
-            max: Maximum allowed value (optional)
+            min_value: Minimum allowed value (optional)
+            max_value: Maximum allowed value (optional)
             name: Human-readable name for the check (optional)
             history: Historical comparison configuration (optional):
                 table: Table containing historical DQ results
                 window: Number of historical records to consider (default: 7)
                 min_history: Minimum records required for comparison (default: 3)
-                tolerance_pct: Allowed percentage deviation from baseline (default: 10)
+                tolerance_percent: Allowed percentage deviation from baseline (default: 10)
         """
         start_time = datetime.now(UTC)
         metric = cfg["metric"]
         group_by = cfg.get("group_by", [])
-        min_v = cfg.get("min")
-        max_v = cfg.get("max")
+        min_v = cfg.get("min_value")
+        max_v = cfg.get("max_value")
 
         total_rows = df.count()
         current_df = (
@@ -664,7 +683,7 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
                 ).first()[0]
 
                 if baseline and baseline > 0:
-                    tol = history_cfg.get("tolerance_pct", 10)
+                    tol = history_cfg.get("tolerance_percent", 10)
                     deviation = abs(current_value - baseline) / baseline * 100
                     passed = deviation <= tol
 
@@ -788,30 +807,36 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
 
         return True, details, None
 
-    def _check_cross_gold(self, _df: DataFrame, cfg: dict[str, Any]) -> tuple[bool, str, str | None]:
+    def _check_cross_gold(
+        self,
+        df: DataFrame,  # noqa: ARG002 - 'df' required so dispatch passes table_ctx (3-arg signature)
+        cfg: dict[str, Any],
+        table_ctx: dict[str, str],
+    ) -> tuple[bool, str, str | None]:
         """
         Cross-Gold reconciliation check.
 
         Compares aggregated values between two tables (Gold vs Gold or Gold vs Silver).
 
-        Parameters:
-            left_table: Fully qualified left table name
+        Config:
+            left_table: Fully qualified left table name (default: current table)
             right_table: Fully qualified right table name
             left_expr: Expression for left table
             right_expr: Expression for right table
             left_filter: Optional SQL filter for left table (e.g., "type = 'rating'")
             right_filter: Optional SQL filter for right table (e.g., "type = 'rating'")
             group_by: Optional list of columns to group by
-            tolerance: Numeric tolerance for comparison (default 0.01)
+            tolerance_abs: Numeric tolerance for comparison (default 0.01)
             raw_expr: If True, use expressions as-is (for aggregate expressions like COUNT, SUM).
                       If False (default), wrap expressions in SUM().
         """
         start_time = datetime.now(UTC)
-        ok, err = self._require_cfg(cfg, "left_table", "right_table", "left_expr", "right_expr")
+        ok, err = self._require_cfg(cfg, "right_table", "left_expr", "right_expr")
         if not ok:
             return False, err, None
 
-        left_table = cfg["left_table"]
+        default_left = f"{table_ctx['catalog']}.{table_ctx['schema']}.{table_ctx['table']}"
+        left_table = cfg.get("left_table", default_left)
         right_table = cfg["right_table"]
         df_left = self.spark.table(left_table)
         df_right = self.spark.table(right_table)
@@ -826,7 +851,7 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
             df_right = df_right.filter(f.expr(right_filter))
 
         group_by = cfg.get("group_by", [])
-        tolerance = cfg.get("tolerance", 0.01)
+        tolerance = cfg.get("tolerance_abs", 0.01)
         raw_expr = cfg.get("raw_expr", False)
 
         if group_by:
@@ -1103,7 +1128,7 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
 
         return result
 
-    def _check_trend(
+    def _check_trend(  # noqa: PLR0911
         self, df: DataFrame, cfg: dict[str, Any], table_ctx: dict[str, str]
     ) -> tuple[bool, str, str | None]:
         """
@@ -1111,24 +1136,29 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
 
         Config:
             metric: SQL expression for the metric (e.g., "COUNT(*)", "SUM(amount)")
-            history_table: Table containing historical DQ results (required)
+            history: Historical-results configuration:
+                table: Table containing historical DQ results (required)
+                window: Number of historical records to consider (default: 7)
+                min_history: Minimum records required for comparison (default: 3)
+                tolerance_percent: Allowed percentage deviation from median (default: 20)
             name: Check name to lookup in history (required)
-            window: Number of historical records to consider (default: 7)
-            min_history: Minimum records required for comparison (default: 3)
-            tolerance_pct: Allowed percentage deviation from median (default: 20)
             direction: Expected trend direction - "stable", "increasing", "decreasing" (default: stable)
         """
         start_time = datetime.now(UTC)
-        ok, err = self._require_cfg(cfg, "metric", "history_table", "name")
+        ok, err = self._require_cfg(cfg, "metric", "history", "name")
         if not ok:
             return False, err, None
 
+        history_cfg = cfg["history"] if isinstance(cfg["history"], dict) else {}
+        if not history_cfg.get("table"):
+            return False, self._details_config_missing("history.table"), None
+
         metric_expr = cfg["metric"]
-        history_table = cfg["history_table"]
+        history_table = history_cfg["table"]
         check_name = cfg["name"]
-        window = int(cfg.get("window", 7))
-        min_history = int(cfg.get("min_history", 3))
-        tolerance_pct = float(cfg.get("tolerance_pct", 20))
+        window = int(history_cfg.get("window", 7))
+        min_history = int(history_cfg.get("min_history", 3))
+        tolerance_pct = float(history_cfg.get("tolerance_percent", 20))
         direction = cfg.get("direction", "stable")
 
         total_rows = df.count()

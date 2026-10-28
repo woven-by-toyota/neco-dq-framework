@@ -2,11 +2,18 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+import difflib
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, UTC
 from typing import Any
 
+from neco_dq.core.registry.check_param_schema import (
+    allowed_keys,
+    forbidden_keys_present,
+    resolve_aliases,
+    unknown_keys,
+)
 from neco_dq.core.summary.summary_engine import BaseSummaryEngine
 
 logger = logging.getLogger("neco_dq")
@@ -41,6 +48,10 @@ class DQTestSuite(ABC):
     # Profile context for execution trace (set once per suite, used by all checks)
     _profile_name: str | None = None
     _profile_target_catalog: str | None = None
+
+    # Deprecated-parameter usage collected during a run (for the summary report).
+    # Keyed by (check, old, new); value tracks the distinct tables where it occurred.
+    _deprecations_log: dict[tuple[str, str, str], dict[str, Any]] | None = None
 
     # ------------------------------------------------------------------
     # Abstract properties (must be implemented by subclasses)
@@ -194,12 +205,99 @@ class DQTestSuite(ABC):
             return [cfg]
         raise ValueError(f"Invalid check configuration type: {type(cfg)}")
 
+    @property
+    def _unknown_check_params_mode(self) -> str:
+        """Strictness for unknown/forbidden check params (``dq_policy``, §7).
+
+        One of ``warn`` (default, log and continue), ``error`` (fail the run),
+        or ``ignore`` (restore pre-validation behavior). Honors the
+        non-breaking decision: default ``warn``.
+        """
+        policy = self.cfg.get("dq_policy") or {}
+        mode = str(policy.get("unknown_check_params", "warn")).lower()
+        return mode if mode in ("warn", "error", "ignore") else "warn"
+
+    def _suggest_key(self, check_name: str, key: str) -> str | None:
+        """Closest valid key for a typo'd one, or None (edit-distance, §7)."""
+        allowed = allowed_keys(self._suite_name, check_name)
+        if not allowed:
+            return None
+        matches = difflib.get_close_matches(key, sorted(allowed), n=1, cutoff=0.6)
+        return matches[0] if matches else None
+
+    def _resolve_and_validate_cfg(self, check_name: str, cfg: dict) -> dict:
+        """Resolve deprecated parameter aliases and validate the config surface.
+
+        - Renames deprecated keys to their canonical names (recording each use,
+          with the tables it occurred on, for the run summary) so existing
+          configs keep working. Deprecations are NOT logged at resolution time;
+          they are rendered as a dedicated summary section (verbose only).
+        - Surfaces unknown top-level keys (likely typos, with a suggested
+          correction) and forbidden keys per the ``unknown_check_params``
+          strictness setting (§7): ``warn`` logs and continues, ``error``
+          raises, ``ignore`` is silent.
+
+        Returns the resolved config (a shallow copy when aliases applied).
+        """
+        resolved, deprecations = resolve_aliases(self._suite_name, check_name, cfg)
+
+        if deprecations:
+            if self._deprecations_log is None:
+                self._deprecations_log = {}
+            table_id = getattr(self, "_current_table_fq", None) or "<unknown>"
+            for dep in deprecations:
+                key = (dep["check"], dep["old"], dep["new"])
+                entry = self._deprecations_log.setdefault(
+                    key,
+                    {"check": dep["check"], "old": dep["old"], "new": dep["new"], "tables": set()},
+                )
+                entry["tables"].add(table_id)
+
+        mode = self._unknown_check_params_mode
+        if mode == "ignore":
+            return resolved
+
+        problems: list[str] = []
+        for key in forbidden_keys_present(self._suite_name, check_name, resolved):
+            problems.append(f"parameter '{key}' is not allowed")
+        for key in unknown_keys(self._suite_name, check_name, resolved):
+            suggestion = self._suggest_key(check_name, key)
+            hint = f"did you mean '{suggestion}'?" if suggestion else "possible typo"
+            problems.append(f"unknown parameter '{key}' ({hint})")
+
+        if not problems:
+            return resolved
+
+        if mode == "error":
+            raise ValueError(f"[{self._suite_name}] check '{check_name}': " + "; ".join(problems))
+
+        for problem in problems:
+            logger.warning("[%s] check '%s': %s", self._suite_name, check_name, problem)
+        return resolved
+
+    def get_deprecations(self) -> list[dict[str, Any]]:
+        """Return deprecated-parameter usages collected during the run.
+
+        Each entry is ``{check, old, new, table_count}`` where ``table_count``
+        is the number of distinct tables that used the deprecated key.
+        """
+        log = self._deprecations_log or {}
+        return [
+            {
+                "check": entry["check"],
+                "old": entry["old"],
+                "new": entry["new"],
+                "table_count": len(entry["tables"]),
+            }
+            for entry in log.values()
+        ]
+
     def _build_check_instance_name(self, name: str, cfg: dict, idx: int, single: bool) -> str:
         """Build unique name for check instance."""
         if single:
             return name
         # Try common naming fields in order of priority
-        for field in ("name", "key_column", "column", "gold_column", "columns"):
+        for field in ("name", "key_columns", "key_column", "column", "gold_column", "columns"):
             if field in cfg:
                 val = cfg[field]
                 if isinstance(val, list):
@@ -889,7 +987,7 @@ class DQTestSuite(ABC):
         tmpl = templates.get(check_type, templates["generic"])
 
         # Build parameters from config
-        key_columns = cfg.get("key_column", cfg.get("column", affected_columns))
+        key_columns = cfg.get("key_columns", cfg.get("key_column", cfg.get("column", affected_columns)))
         if isinstance(key_columns, list):
             key_columns_str = ", ".join(key_columns)
         else:
@@ -1629,9 +1727,11 @@ class DQTestSuite(ABC):
                 if not self._should_run_check(cfg):
                     continue
 
-                severity = self._severity(cfg)
-                blocking = self._blocking(cfg)
-                check_id = self._build_check_instance_name(name, cfg, idx, single_instance)
+                resolved_cfg = self._resolve_and_validate_cfg(name, cfg)
+
+                severity = self._severity(resolved_cfg)
+                blocking = self._blocking(resolved_cfg)
+                check_id = self._build_check_instance_name(name, resolved_cfg, idx, single_instance)
 
                 self._last_failure_stats = None
                 self._last_investigation_query = None
@@ -1639,7 +1739,7 @@ class DQTestSuite(ABC):
 
                 try:
                     func = getattr(self, f"_check_{name}")
-                    passed, details, column = self._dispatch_check(func, name, df, cfg, table_ctx, fq_table)
+                    passed, details, column = self._dispatch_check(func, name, df, resolved_cfg, table_ctx, fq_table)
                 except Exception as e:
                     passed, details, column = False, str(e), None
 
@@ -1691,4 +1791,8 @@ class DQTestSuite(ABC):
 
     def build_summary(self, results: list[dict[str, Any]]) -> dict[str, Any]:
         """Build summary from validation results."""
-        return BaseSummaryEngine().summarize(results)
+        summary = BaseSummaryEngine().summarize(results)
+        deprecations = self.get_deprecations()
+        if deprecations:
+            summary["deprecations"] = deprecations
+        return summary

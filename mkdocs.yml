@@ -101,6 +101,7 @@ nav:
       - Custom Suites: test-suites/custom.md
       - Compare Metric: configuration/compare-metric.md
       - Thresholds: configuration/thresholds.md
+      - Parameter Naming Conventions: configuration/naming-conventions.md
       - Data Filtering: configuration/data-filtering.md
       - Tag Filtering: configuration/tags-filtering.md
 

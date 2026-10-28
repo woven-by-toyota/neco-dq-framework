@@ -121,7 +121,7 @@ class TestGoldVolume:
         """Volume should pass when metric is within bounds."""
         with allure.step("Setup test data"):
             # df_metrics total is 700
-            cfg = {"metric": "SUM(amount)", "min": 500, "max": 1000}
+            cfg = {"metric": "SUM(amount)", "min_value": 500, "max_value": 1000}
             table_ctx = {"catalog": "test", "schema": "test", "table": "test"}
 
         with allure.step("Execute volume check"):
@@ -138,7 +138,7 @@ class TestGoldVolume:
         """Volume should fail when metric is below minimum."""
         with allure.step("Setup test data"):
             # df_metrics_low_volume total is 50
-            cfg = {"metric": "SUM(amount)", "min": 100}
+            cfg = {"metric": "SUM(amount)", "min_value": 100}
             table_ctx = {"catalog": "test", "schema": "test", "table": "test"}
 
         with allure.step("Execute volume check"):
@@ -156,7 +156,7 @@ class TestGoldVolume:
         """Volume should fail when metric exceeds maximum."""
         with allure.step("Setup test data"):
             # df_metrics total is 700
-            cfg = {"metric": "SUM(amount)", "max": 500}
+            cfg = {"metric": "SUM(amount)", "max_value": 500}
             table_ctx = {"catalog": "test", "schema": "test", "table": "test"}
 
         with allure.step("Execute volume check"):
@@ -174,7 +174,7 @@ class TestGoldVolume:
         """Volume should work with group_by aggregation."""
         with allure.step("Setup test data"):
             # df_metrics: G1=300, G2=400, total=700
-            cfg = {"metric": "SUM(amount)", "group_by": ["group_id"], "min": 500}
+            cfg = {"metric": "SUM(amount)", "group_by": ["group_id"], "min_value": 500}
             table_ctx = {"catalog": "test", "schema": "test", "table": "test"}
 
         with allure.step("Execute volume check"):
@@ -389,10 +389,10 @@ class TestGoldReconciliationExpr:
         with allure.step("Setup test data"):
             df_silver_recon.createOrReplaceTempView("test_silver_recon")
             cfg = {
-                "source_silver": "test_silver_recon",
-                "gold": "SUM(amount)",
-                "silver": "SUM(amount)",
-                "tolerance": 1.0,
+                "silver": {"table": "test_silver_recon"},
+                "gold_expr": "SUM(amount)",
+                "silver_expr": "SUM(amount)",
+                "tolerance_percent": 1.0,
             }
 
         with allure.step("Execute reconciliation check"):
@@ -410,10 +410,10 @@ class TestGoldReconciliationExpr:
         with allure.step("Setup test data"):
             df_silver_recon_mismatch.createOrReplaceTempView("test_silver_mismatch")
             cfg = {
-                "source_silver": "test_silver_mismatch",
-                "gold": "SUM(amount)",
-                "silver": "SUM(amount)",
-                "tolerance": 1.0,
+                "silver": {"table": "test_silver_mismatch"},
+                "gold_expr": "SUM(amount)",
+                "silver_expr": "SUM(amount)",
+                "tolerance_percent": 1.0,
             }
 
         with allure.step("Execute reconciliation check"):
@@ -435,11 +435,11 @@ class TestGoldReconciliationExpr:
             df_silver = spark.createDataFrame(silver_data, ["group_id", "amount"])
             df_silver.createOrReplaceTempView("test_silver_grouped")
             cfg = {
-                "source_silver": "test_silver_grouped",
-                "gold": "SUM(amount)",
-                "silver": "SUM(amount)",
+                "silver": {"table": "test_silver_grouped"},
+                "gold_expr": "SUM(amount)",
+                "silver_expr": "SUM(amount)",
                 "group_by": ["group_id"],
-                "tolerance": 1.0,
+                "tolerance_percent": 1.0,
             }
 
         with allure.step("Execute reconciliation check"):
@@ -461,11 +461,12 @@ class TestGoldReconciliationExpr:
             df_silver = spark.createDataFrame(silver_data, ["id", "status", "amount"])
             df_silver.createOrReplaceTempView("test_silver_filtered")
             cfg = {
-                "source_silver": "test_silver_filtered",
-                "gold": "SUM(amount)",
-                "silver": "SUM(amount)",
-                "filter": {"gold": "status = 'active'", "silver": "status = 'active'"},
-                "tolerance": 1.0,
+                "silver": {"table": "test_silver_filtered"},
+                "gold_expr": "SUM(amount)",
+                "silver_expr": "SUM(amount)",
+                "gold_filter": "status = 'active'",
+                "silver_filter": "status = 'active'",
+                "tolerance_percent": 1.0,
             }
 
         with allure.step("Execute reconciliation check"):
@@ -481,7 +482,7 @@ class TestGoldReconciliationExpr:
     def test_reconciliation_missing_config(self, gold_suite, df_gold_recon):
         """Reconciliation should fail when required config is missing."""
         with allure.step("Setup test data"):
-            cfg = {"source_silver": "test_table"}  # Missing gold and silver expressions
+            cfg = {"silver": {"table": "test_table"}}  # Missing gold and silver expressions
 
         with allure.step("Execute reconciliation check"):
             passed, details, _name = gold_suite._check_reconciliation_expr(df_gold_recon, cfg)
@@ -504,11 +505,12 @@ class TestGoldReconciliationExpr:
             df_silver = spark.createDataFrame(silver_data, ["id", "amount"])
             df_silver.createOrReplaceTempView("test_silver_join_filter")
             cfg = {
-                "source_silver": "test_silver_join_filter",
-                "gold": "SUM(amount)",
-                "silver": "SUM(amount)",
-                "join_filter": {"gold_column": "id", "silver_column": "id"},
-                "tolerance": 1.0,
+                "silver": {"table": "test_silver_join_filter"},
+                "gold_expr": "SUM(amount)",
+                "silver_expr": "SUM(amount)",
+                "gold_join_columns": "id",
+                "silver_join_columns": "id",
+                "tolerance_percent": 1.0,
             }
 
         with allure.step("Execute reconciliation check"):
@@ -530,10 +532,10 @@ class TestGoldReconciliationExpr:
             df_silver = spark.createDataFrame(silver_data, ["id", "amount"])
             df_silver.createOrReplaceTempView("test_silver_both_zero")
             cfg = {
-                "source_silver": "test_silver_both_zero",
-                "gold": "SUM(amount)",
-                "silver": "SUM(amount)",
-                "tolerance": 1.0,
+                "silver": {"table": "test_silver_both_zero"},
+                "gold_expr": "SUM(amount)",
+                "silver_expr": "SUM(amount)",
+                "tolerance_percent": 1.0,
             }
 
         with allure.step("Execute reconciliation check"):
@@ -555,10 +557,10 @@ class TestGoldReconciliationExpr:
             df_silver = spark.createDataFrame(silver_data, ["id", "amount"])
             df_silver.createOrReplaceTempView("test_silver_zero")
             cfg = {
-                "source_silver": "test_silver_zero",
-                "gold": "SUM(amount)",
-                "silver": "SUM(amount)",
-                "tolerance": 1.0,
+                "silver": {"table": "test_silver_zero"},
+                "gold_expr": "SUM(amount)",
+                "silver_expr": "SUM(amount)",
+                "tolerance_percent": 1.0,
             }
 
         with allure.step("Execute reconciliation check"):
@@ -652,10 +654,10 @@ class TestGoldCoverage:
         with allure.step("Setup test data"):
             df_coverage_silver.createOrReplaceTempView("test_coverage_silver")
             cfg = {
-                "silver_table": "test_coverage_silver",
+                "silver": {"table": "test_coverage_silver"},
                 "gold_expr": "SUM(amount)",
                 "silver_expr": "SUM(total)",
-                "tolerance_pct": 1.0,
+                "tolerance_percent": 1.0,
             }
 
         with allure.step("Execute coverage check"):
@@ -675,10 +677,10 @@ class TestGoldCoverage:
             df_silver = spark.createDataFrame(silver_data, ["group_id", "total"])
             df_silver.createOrReplaceTempView("test_coverage_silver_fail")
             cfg = {
-                "silver_table": "test_coverage_silver_fail",
+                "silver": {"table": "test_coverage_silver_fail"},
                 "gold_expr": "SUM(amount)",
                 "silver_expr": "SUM(total)",
-                "tolerance_pct": 1.0,
+                "tolerance_percent": 1.0,
             }
 
         with allure.step("Execute coverage check"):
@@ -696,11 +698,11 @@ class TestGoldCoverage:
         with allure.step("Setup test data"):
             df_coverage_silver.createOrReplaceTempView("test_coverage_silver_keyed")
             cfg = {
-                "silver_table": "test_coverage_silver_keyed",
+                "silver": {"table": "test_coverage_silver_keyed"},
                 "gold_expr": "SUM(amount)",
                 "silver_expr": "SUM(total)",
-                "join_keys": ["group_id"],
-                "tolerance_pct": 1.0,
+                "join_columns": ["group_id"],
+                "tolerance_percent": 1.0,
             }
 
         with allure.step("Execute coverage check"):
@@ -723,11 +725,11 @@ class TestGoldCoverage:
             df_silver = spark.createDataFrame(silver_data, ["group_id", "status", "total"])
             df_silver.createOrReplaceTempView("test_coverage_silver_filter")
             cfg = {
-                "silver_table": "test_coverage_silver_filter",
+                "silver": {"table": "test_coverage_silver_filter"},
                 "gold_expr": "SUM(amount)",
                 "silver_expr": "SUM(total)",
                 "silver_filter": "status = 'active'",
-                "tolerance_pct": 1.0,
+                "tolerance_percent": 1.0,
             }
 
         with allure.step("Execute coverage check"):
@@ -745,11 +747,11 @@ class TestGoldCoverage:
         with allure.step("Setup test data"):
             df_coverage_silver.createOrReplaceTempView("test_coverage_silver_mismatch_keys")
             cfg = {
-                "silver_table": "test_coverage_silver_mismatch_keys",
+                "silver": {"table": "test_coverage_silver_mismatch_keys"},
                 "gold_expr": "SUM(amount)",
                 "silver_expr": "SUM(total)",
-                "gold_join_keys": ["group_id"],
-                # Missing silver_join_keys
+                "gold_join_columns": ["group_id"],
+                # Missing silver_join_columns
             }
 
         with allure.step("Execute coverage check"):
@@ -757,7 +759,7 @@ class TestGoldCoverage:
 
         with allure.step("Verify: should fail with mismatched keys"):
             assert passed is False
-            assert "gold_join_keys and silver_join_keys" in details
+            assert "gold_join_columns and silver_join_columns" in details
 
     @allure.title("Coverage fails with different key lengths")
     @allure.severity(AllureSeverity.NORMAL)
@@ -767,11 +769,11 @@ class TestGoldCoverage:
         with allure.step("Setup test data"):
             df_coverage_silver.createOrReplaceTempView("test_coverage_key_length")
             cfg = {
-                "silver_table": "test_coverage_key_length",
+                "silver": {"table": "test_coverage_key_length"},
                 "gold_expr": "SUM(amount)",
                 "silver_expr": "SUM(total)",
-                "gold_join_keys": ["group_id", "extra_key"],
-                "silver_join_keys": ["group_id"],
+                "gold_join_columns": ["group_id", "extra_key"],
+                "silver_join_columns": ["group_id"],
             }
 
         with allure.step("Execute coverage check"):
@@ -793,10 +795,10 @@ class TestGoldCoverage:
             df_silver = spark.createDataFrame(silver_data, ["group_id", "total"])
             df_silver.createOrReplaceTempView("test_coverage_both_zero")
             cfg = {
-                "silver_table": "test_coverage_both_zero",
+                "silver": {"table": "test_coverage_both_zero"},
                 "gold_expr": "SUM(amount)",
                 "silver_expr": "SUM(total)",
-                "tolerance_pct": 1.0,
+                "tolerance_percent": 1.0,
             }
 
         with allure.step("Execute coverage check"):
@@ -818,10 +820,10 @@ class TestGoldCoverage:
             df_silver = spark.createDataFrame(silver_data, ["group_id", "total"])
             df_silver.createOrReplaceTempView("test_coverage_silver_zero")
             cfg = {
-                "silver_table": "test_coverage_silver_zero",
+                "silver": {"table": "test_coverage_silver_zero"},
                 "gold_expr": "SUM(amount)",
                 "silver_expr": "SUM(total)",
-                "tolerance_pct": 1.0,
+                "tolerance_percent": 1.0,
             }
 
         with allure.step("Execute coverage check"):
@@ -850,11 +852,13 @@ class TestGoldCrossGold:
                 "right_table": "test_gold_right",
                 "left_expr": "SUM(amount)",
                 "right_expr": "SUM(total)",
-                "tolerance": 0.01,
+                "tolerance_abs": 0.01,
             }
 
         with allure.step("Execute cross-gold check"):
-            passed, details, _column = gold_suite._check_cross_gold(df_gold_left, cfg)
+            passed, details, _column = gold_suite._check_cross_gold(
+                df_gold_left, cfg, {"catalog": "cat", "schema": "sch", "table": "tbl"}
+            )
 
         with allure.step("Verify: cross-gold should pass"):
             assert passed is True
@@ -873,11 +877,13 @@ class TestGoldCrossGold:
                 "right_table": "test_gold_right_fail",
                 "left_expr": "SUM(amount)",
                 "right_expr": "SUM(total)",
-                "tolerance": 0.01,
+                "tolerance_abs": 0.01,
             }
 
         with allure.step("Execute cross-gold check"):
-            passed, details, _column = gold_suite._check_cross_gold(df_gold_left, cfg)
+            passed, details, _column = gold_suite._check_cross_gold(
+                df_gold_left, cfg, {"catalog": "cat", "schema": "sch", "table": "tbl"}
+            )
 
         with allure.step("Verify: cross-gold should fail"):
             assert passed is False
@@ -902,11 +908,13 @@ class TestGoldCrossGold:
                 "right_expr": "SUM(total)",
                 "left_filter": "type = 'typeA'",
                 "right_filter": "type = 'typeA'",
-                "tolerance": 0.01,
+                "tolerance_abs": 0.01,
             }
 
         with allure.step("Execute cross-gold check"):
-            passed, details, _column = gold_suite._check_cross_gold(df_left, cfg)
+            passed, details, _column = gold_suite._check_cross_gold(
+                df_left, cfg, {"catalog": "cat", "schema": "sch", "table": "tbl"}
+            )
 
         with allure.step("Verify: filtered cross-gold should pass"):
             assert passed is True
@@ -930,11 +938,13 @@ class TestGoldCrossGold:
                 "left_expr": "amount",
                 "right_expr": "total",
                 "group_by": ["group_id"],
-                "tolerance": 0.01,
+                "tolerance_abs": 0.01,
             }
 
         with allure.step("Execute cross-gold check"):
-            passed, details, _column = gold_suite._check_cross_gold(df_left, cfg)
+            passed, details, _column = gold_suite._check_cross_gold(
+                df_left, cfg, {"catalog": "cat", "schema": "sch", "table": "tbl"}
+            )
 
         with allure.step("Verify: grouped cross-gold should pass"):
             assert passed is True
@@ -959,11 +969,13 @@ class TestGoldCrossGold:
                 "right_expr": "COUNT(DISTINCT id)",
                 "group_by": ["group_id"],
                 "raw_expr": True,
-                "tolerance": 0.01,
+                "tolerance_abs": 0.01,
             }
 
         with allure.step("Execute cross-gold check"):
-            passed, details, _column = gold_suite._check_cross_gold(df_left, cfg)
+            passed, details, _column = gold_suite._check_cross_gold(
+                df_left, cfg, {"catalog": "cat", "schema": "sch", "table": "tbl"}
+            )
 
         with allure.step("Verify: raw expr cross-gold should pass"):
             assert passed is True
@@ -978,7 +990,9 @@ class TestGoldCrossGold:
             cfg = {"left_table": "test_table"}  # Missing right_table, left_expr, right_expr
 
         with allure.step("Execute cross-gold check"):
-            passed, details, _column = gold_suite._check_cross_gold(df_gold_left, cfg)
+            passed, details, _column = gold_suite._check_cross_gold(
+                df_gold_left, cfg, {"catalog": "cat", "schema": "sch", "table": "tbl"}
+            )
 
         with allure.step("Verify: should fail with missing config"):
             assert passed is False
@@ -996,7 +1010,7 @@ class TestGoldTrend:
     def test_trend_missing_config(self, gold_suite, df_metrics):
         """Trend should fail when required config is missing."""
         with allure.step("Setup test data"):
-            cfg = {"metric": "COUNT(*)"}  # Missing history_table and name
+            cfg = {"metric": "COUNT(*)"}  # Missing history and name
             table_ctx = {"catalog": "test", "schema": "test", "table": "test"}
 
         with allure.step("Execute trend check"):
@@ -1020,9 +1034,8 @@ class TestGoldTrend:
             df_history.createOrReplaceTempView("test_history_empty")
             cfg = {
                 "metric": "COUNT(*)",
-                "history_table": "test_history_empty",
+                "history": {"table": "test_history_empty", "min_history": 3},
                 "name": "test_trend",
-                "min_history": 3,
             }
             table_ctx = {"catalog": "test", "schema": "test", "table": "metrics"}
 
@@ -1054,10 +1067,8 @@ class TestGoldTrend:
             df_history.createOrReplaceTempView("test_history_stable")
             cfg = {
                 "metric": "COUNT(*)",
-                "history_table": "test_history_stable",
+                "history": {"table": "test_history_stable", "min_history": 3, "tolerance_percent": 20},
                 "name": "test_trend",
-                "min_history": 3,
-                "tolerance_pct": 20,
                 "direction": "stable",
             }
             table_ctx = {"catalog": "test", "schema": "test", "table": "metrics"}
@@ -1090,10 +1101,8 @@ class TestGoldTrend:
             df_history.createOrReplaceTempView("test_history_deviation")
             cfg = {
                 "metric": "COUNT(*)",
-                "history_table": "test_history_deviation",
+                "history": {"table": "test_history_deviation", "min_history": 3, "tolerance_percent": 10},
                 "name": "test_trend",
-                "min_history": 3,
-                "tolerance_pct": 10,
                 "direction": "stable",
             }
             table_ctx = {"catalog": "test", "schema": "test", "table": "metrics"}
@@ -1125,9 +1134,8 @@ class TestGoldTrend:
             df_history.createOrReplaceTempView("test_history_invalid_dir")
             cfg = {
                 "metric": "COUNT(*)",
-                "history_table": "test_history_invalid_dir",
+                "history": {"table": "test_history_invalid_dir", "min_history": 3},
                 "name": "test_trend",
-                "min_history": 3,
                 "direction": "invalid_direction",
             }
             table_ctx = {"catalog": "test", "schema": "test", "table": "metrics"}

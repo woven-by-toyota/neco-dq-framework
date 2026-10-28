@@ -406,7 +406,6 @@ class CrossTableMixin:
         parts = table_fq.split(".")
         catalog = parts[_FQ_CATALOG_IDX] if len(parts) > _FQ_CATALOG_IDX else ""
         schema = parts[_FQ_SCHEMA_IDX] if len(parts) > _FQ_SCHEMA_IDX else ""
-        table = parts[_FQ_TABLE_IDX] if len(parts) > _FQ_TABLE_IDX else ""
 
         # Referential integrity: where this table has FK to another
         ri_checks = []
@@ -418,16 +417,14 @@ class CrossTableMixin:
                         "enabled": True,
                         "severity": "error",
                         "blocking": True,
-                        "schema": schema,
-                        "table": table,
                         "source_column": rel["source_column"],
-                        "target_schema": (
-                            target_parts[_FQ_SCHEMA_IDX] if len(target_parts) > _FQ_SCHEMA_IDX else schema
-                        ),
-                        "target_table": (
-                            target_parts[_FQ_TABLE_IDX] if len(target_parts) > _FQ_TABLE_IDX else target_parts[-1]
-                        ),
-                        "target_column": rel["target_column"],
+                        "target": {
+                            "schema": (target_parts[_FQ_SCHEMA_IDX] if len(target_parts) > _FQ_SCHEMA_IDX else schema),
+                            "table": (
+                                target_parts[_FQ_TABLE_IDX] if len(target_parts) > _FQ_TABLE_IDX else target_parts[-1]
+                            ),
+                            "column": rel["target_column"],
+                        },
                     }
                 )
         if ri_checks:
@@ -462,8 +459,8 @@ class CrossTableMixin:
                     "source_table": (
                         source_parts[_FQ_TABLE_IDX] if len(source_parts) > _FQ_TABLE_IDX else source_parts[-1]
                     ),
-                    "join_key": join_key,
-                    "tolerance_pct": 0.0,
+                    "join_columns": join_key,
+                    "tolerance_percent": 0.0,
                 }
                 break
 
@@ -485,8 +482,8 @@ class CrossTableMixin:
                         "source_catalog": bronze_info.get("catalog", catalog),
                         "source_schema": bronze_info.get("schema", ""),
                         "source_table": bronze_info.get("table", ""),
-                        "join_key": join_key,
-                        "tolerance_pct": 0.0,
+                        "join_columns": join_key,
+                        "tolerance_percent": 0.0,
                     }
                     break
 
@@ -506,10 +503,10 @@ class CrossTableMixin:
                     "detail_table": (
                         detail_parts[_FQ_TABLE_IDX] if len(detail_parts) > _FQ_TABLE_IDX else detail_parts[-1]
                     ),
-                    "join_key": pair["join_key"],
+                    "join_columns": pair["join_key"],
                     "detail_amount_column": "<amount_column>",  # Placeholder
                     "header_amount_column": "<total_column>",  # Placeholder
-                    "tolerance": 0.01,
+                    "tolerance_abs": 0.01,
                 }
                 break
 
@@ -575,6 +572,15 @@ class CrossTableMixin:
                     )
         return ri_checks
 
+    def _fq_to_silver_block(self, fq: str) -> dict[str, str]:
+        """Split a ``'catalog.schema.table'`` FQ into a nested silver reference block."""
+        parts = fq.split(".")
+        return {
+            "catalog": parts[_FQ_CATALOG_IDX] if len(parts) > _FQ_CATALOG_IDX else "",
+            "schema": parts[_FQ_SCHEMA_IDX] if len(parts) > _FQ_SCHEMA_IDX else "",
+            "table": parts[_FQ_TABLE_IDX] if len(parts) > _FQ_TABLE_IDX else parts[-1],
+        }
+
     def _build_reconciliation_from_layer_pairs(self, table_fq: str, layer_pairs: list[dict]) -> dict[str, Any]:
         """Build reconciliation and coverage checks from layer pairs."""
         checks: dict[str, Any] = {}
@@ -586,10 +592,10 @@ class CrossTableMixin:
                         "severity": "warning",
                         "blocking": False,
                         "name": f"{pair['base_name']}_row_count_reconciliation",
-                        "source_silver": pair["source_table"],
-                        "gold": "COUNT(*)",
-                        "silver": "COUNT(*)",
-                        "tolerance": 5.0,
+                        "silver": self._fq_to_silver_block(pair["source_table"]),
+                        "gold_expr": "COUNT(*)",
+                        "silver_expr": "COUNT(*)",
+                        "tolerance_percent": 5.0,
                     }
                 ]
                 checks["coverage"] = [
@@ -597,10 +603,10 @@ class CrossTableMixin:
                         "enabled": True,
                         "severity": "warning",
                         "blocking": False,
-                        "silver_table": pair["source_table"],
+                        "silver": self._fq_to_silver_block(pair["source_table"]),
                         "gold_expr": "COUNT(*)",
                         "silver_expr": "COUNT(*)",
-                        "tolerance_pct": 5.0,
+                        "tolerance_percent": 5.0,
                     }
                 ]
                 break
@@ -623,11 +629,11 @@ class CrossTableMixin:
                         "severity": "warning",
                         "blocking": False,
                         "name": "row_count_reconciliation",
-                        "source_silver": silver_fq,
-                        "gold": "COUNT(*)",
-                        "silver": "COUNT(*)",
+                        "silver": self._fq_to_silver_block(silver_fq),
+                        "gold_expr": "COUNT(*)",
+                        "silver_expr": "COUNT(*)",
                         "group_by": group_by_cols if group_by_cols else None,
-                        "tolerance": 5.0,
+                        "tolerance_percent": 5.0,
                     }
                 ]
                 checks["coverage"] = [
@@ -635,10 +641,10 @@ class CrossTableMixin:
                         "enabled": True,
                         "severity": "warning",
                         "blocking": False,
-                        "silver_table": silver_fq,
+                        "silver": self._fq_to_silver_block(silver_fq),
                         "gold_expr": "COUNT(*)",
                         "silver_expr": "COUNT(*)",
-                        "tolerance_pct": 5.0,
+                        "tolerance_percent": 5.0,
                     }
                 ]
                 break

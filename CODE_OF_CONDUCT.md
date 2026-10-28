@@ -15,6 +15,6 @@ This Code of Conduct applies within all project spaces, and also when an individ
 
 ## Enforcement
 
-Report unacceptable behavior privately through GitHub's [security advisory](https://github.com/woven-by-toyota/neco-dq-framework/security/advisories/new) feature or by contacting a maintainer. All reports are reviewed and handled confidentially.
+Report unacceptable behavior privately by contacting a project maintainer directly. All reports are reviewed and handled confidentially.
 
 For the complete set of guidelines, enforcement responsibilities, and escalation steps, see the linked Contributor Covenant text above.

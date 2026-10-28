@@ -43,7 +43,7 @@ silver:
           enabled: true
           severity: critical
           blocking: true
-          key_column: transaction_id
+          key_columns: transaction_id
 ```
 
 **Executed checks:**
@@ -67,14 +67,14 @@ silver:
           enabled: true
           severity: critical
           blocking: true
-          key_column: transaction_id,product_id
+          key_columns: transaction_id,product_id
 
         business_rules:
           enabled: true
           severity: critical
           blocking: true
           name: valid_amounts
-          check: "amount >= 0 AND amount < 1000000"
+          predicate: "amount >= 0 AND amount < 1000000"
 ```
 
 **Behavior:**
@@ -99,12 +99,12 @@ silver:
           - enabled: true
             severity: critical
             blocking: true
-            key_column: transaction_id
+            key_columns: transaction_id
 
           - enabled: true
             severity: warning
             blocking: false
-            key_column: transaction_id,product_id
+            key_columns: transaction_id,product_id
 ```
 
 **Each instance produces one independent result row.**
@@ -131,10 +131,10 @@ checks support it:
 | `json_schema` | yes (shared check) |
 | `distinct_count` | no (binary pass/fail) |
 | `referential_integrity` | no (uses `min_valid_ratio`) |
-| `totals_consistency` | no (uses `tolerance`) |
-| `cross_table_equality` | no (uses `tolerance`) |
+| `totals_consistency` | no (uses `tolerance_abs`) |
+| `cross_table_equality` | no (uses `tolerance_abs`) |
 | `temporal_consistency` | no (binary pass/fail) |
-| `flow_completeness` | no (uses `tolerance_pct`) |
+| `flow_completeness` | no (uses `tolerance_percent`) |
 | `compare_metric` | no (uses operators and value tolerance) |
 | `freshness` | no (uses `max_delay_hours`) |
 
@@ -177,7 +177,7 @@ checks support it:
 - Fails if duplicates exist
 
 **Key configuration:**
-- `key_column`: comma-separated string or list of column names
+- `key_columns`: comma-separated string or list of column names
 - `threshold` (optional): failure tolerance
   - `max_failure_percent`: maximum allowed percentage of duplicate keys (0-100)
   - `max_failure_count`: maximum allowed number of duplicate keys
@@ -198,7 +198,7 @@ idempotency:
   enabled: true
   severity: critical
   blocking: true
-  key_column: transaction_id,product_id
+  key_columns: transaction_id,product_id
 ```
 
 **Example with threshold:**
@@ -208,7 +208,7 @@ idempotency:
   enabled: true
   severity: warning
   blocking: false
-  key_column: transaction_id,product_id
+  key_columns: transaction_id,product_id
   threshold:
     max_failure_percent: 0.1  # Allow up to 0.1% duplicate keys
 ```
@@ -232,7 +232,7 @@ idempotency:
 - Detects invalid state transitions
 
 **Key configuration:**
-- `key_column`: business key (e.g., order_id)
+- `key_columns`: business key (e.g., order_id)
 - `status_column`: column containing status values
 - `timestamp_column`: column for ordering transitions
 - `allowed_flow`: ordered list of valid status values
@@ -254,7 +254,7 @@ status_transition:
   enabled: true
   severity: critical
   blocking: true
-  key_column: order_id
+  key_columns: order_id
   status_column: status
   timestamp_column: updated_at
   allowed_flow:
@@ -271,7 +271,7 @@ status_transition:
   enabled: true
   severity: warning
   blocking: false
-  key_column: order_id
+  key_columns: order_id
   status_column: status
   timestamp_column: updated_at
   allowed_flow:
@@ -302,9 +302,11 @@ status_transition:
 - Validates against minimum valid ratio threshold
 
 **Key configuration:**
-- `schema` / `table` / `source_column`: source table and FK column
+- `source_column`: FK column in the table under validation (required)
 - `target_schema` / `target_table` / `target_column`: target table and PK column
-- `catalog` (optional): catalog for source/target tables (default: current table's catalog)
+- `source_schema` / `source_table` / `source_catalog` (optional): override the
+  source table; all default to the table under validation (`table_ctx`), so you
+  normally omit them
 - `min_valid_ratio` (optional): minimum acceptable match ratio (default: 1.0)
 
 **Result details:** `valid_ratio=<ratio>; min_ratio=<ratio>`
@@ -321,8 +323,7 @@ referential_integrity:
   enabled: true
   severity: critical
   blocking: true
-  schema: my_schema_silver
-  table: transactions
+  # source defaults to the table under validation; only the FK column is needed
   source_column: product_id
   target_schema: my_schema_gold
   target_table: products
@@ -349,7 +350,7 @@ referential_integrity:
 
 **Key configuration:**
 - `group_by`: column(s) to group by
-- `min`: minimum records per group
+- `min_count`: minimum records per group
 - `threshold` (optional): failure tolerance
   - `max_failure_percent`: maximum allowed percentage of violated groups (0-100)
   - `max_failure_count`: maximum allowed number of violated groups
@@ -369,7 +370,7 @@ cardinality:
   severity: warning
   blocking: false
   group_by: transaction_id
-  min: 1
+  min_count: 1
 ```
 
 **Example with threshold:**
@@ -380,7 +381,7 @@ cardinality:
   severity: warning
   blocking: false
   group_by: order_id
-  min: 5
+  min_count: 5
   threshold:
     max_failure_percent: 5.0  # Allow up to 5% of groups below minimum
 ```
@@ -405,12 +406,12 @@ cardinality:
 - Allows configurable tolerance for floating-point differences
 
 **Key configuration:**
-- `join_key`: key to join header and detail tables
+- `join_columns`: key to join header and detail tables
 - `detail_schema` / `detail_table`: detail table location
 - `detail_amount_column`: column to aggregate in detail table
 - `header_amount_column`: column in header table to compare against
-- `tolerance`: acceptable difference (default: 0.0)
-- `catalog` (optional): catalog for detail table (default: current table's catalog)
+- `tolerance_abs`: acceptable absolute difference (default: 0.0)
+- `detail_catalog` (optional): catalog for detail table (default: current table's catalog)
 
 **Result details:** `mismatched_records=<count>; max_difference=<amount>`
 
@@ -426,12 +427,12 @@ totals_consistency:
   enabled: true
   severity: critical
   blocking: true
-  join_key: order_id
+  join_columns: order_id
   detail_schema: sales_silver
   detail_table: order_items
   detail_amount_column: amount
   header_amount_column: total_amount
-  tolerance: 0.01
+  tolerance_abs: 0.01
 ```
 
 **Example Output:**
@@ -453,11 +454,14 @@ totals_consistency:
 - Fails if values differ beyond tolerance
 
 **Key configuration:**
-- `left_schema` / `left_table` / `left_column`: left side of comparison
+- `left_column`: column on the left side (the table under validation)
 - `right_schema` / `right_table` / `right_column`: right side of comparison
-- `join_key`: column to join on
-- `tolerance`: acceptable difference (default: 0.0)
-- `catalog` (optional): catalog for tables (default: current table's catalog)
+- `join_columns`: column to join on
+- `tolerance_abs`: acceptable absolute difference (default: 0.0)
+- `left_schema` / `left_table` / `left_catalog` (optional): override the left
+  side; all default to the table under validation (`table_ctx`)
+- `catalog` (optional): shared catalog for both sides (default: current table's
+  catalog); use `left_catalog` / `right_catalog` for a cross-catalog comparison
 
 **Result details (v1.1.0+):**
 - PASS: `"All {n} records match"`
@@ -475,14 +479,13 @@ cross_table_equality:
   enabled: true
   severity: critical
   blocking: true
-  left_schema: my_schema_silver
-  left_table: transactions
+  # left side defaults to the table under validation; only the right side is named
   right_schema: my_schema_gold
   right_table: transactions_snapshot
-  join_key: line_item_id
+  join_columns: line_item_id
   left_column: score
   right_column: score
-  tolerance: 0
+  tolerance_abs: 0
 ```
 
 **Example Output:**
@@ -576,10 +579,13 @@ compare_metric:
 - Ensures left timestamp is after (or before) right timestamp
 
 **Key configuration:**
-- `left_schema` / `left_table` / `left_timestamp`: left table and timestamp
-- `right_schema` / `right_table` / `right_timestamp`: right table and timestamp
-- `join_key`: column to join on
-- `catalog` (optional): catalog for tables (default: current table's catalog)
+- `left_timestamp_column`: timestamp column on the left (the table under validation)
+- `right_schema` / `right_table` / `right_timestamp_column`: right table and timestamp
+- `join_columns`: column to join on
+- `left_schema` / `left_table` / `left_catalog` (optional): override the left
+  side; all default to the table under validation (`table_ctx`)
+- `catalog` (optional): shared catalog for both sides (default: current table's
+  catalog); use `left_catalog` / `right_catalog` for a cross-catalog comparison
 
 **Result details (v1.1.0+):**
 - PASS: `"All {n} records in valid order"`
@@ -597,13 +603,12 @@ temporal_consistency:
   enabled: true
   severity: critical
   blocking: true
-  left_schema: my_schema_silver
-  left_table: transactions
+  # left side defaults to the table under validation; only the right side is named
   right_schema: my_schema_bronze
   right_table: transactions_raw
-  join_key: line_item_id
-  left_timestamp: processed_at
-  right_timestamp: raw_events_timestamp
+  join_columns: line_item_id
+  left_timestamp_column: processed_at
+  right_timestamp_column: raw_events_timestamp
 ```
 
 **Example Output:**
@@ -625,8 +630,8 @@ temporal_consistency:
 - No join required
 
 **Key configuration:**
-- `left_timestamp`: first timestamp column
-- `right_timestamp`: second timestamp column
+- `left_timestamp_column`: first timestamp column
+- `right_timestamp_column`: second timestamp column
 - `threshold` (optional): failure tolerance
   - `max_failure_percent`: maximum allowed percentage of violations (0-100)
   - `max_failure_count`: maximum allowed number of violations
@@ -647,8 +652,8 @@ row_temporal_consistency:
   enabled: true
   severity: critical
   blocking: true
-  left_timestamp: updated_at
-  right_timestamp: created_at
+  left_timestamp_column: updated_at
+  right_timestamp_column: created_at
 ```
 
 **Example with threshold:**
@@ -658,8 +663,8 @@ row_temporal_consistency:
   enabled: true
   severity: warning
   blocking: false
-  left_timestamp: updated_at
-  right_timestamp: created_at
+  left_timestamp_column: updated_at
+  right_timestamp_column: created_at
   threshold:
     max_failure_count: 50  # Allow up to 50 temporal violations
 ```
@@ -684,7 +689,7 @@ row_temporal_consistency:
 
 **Key configuration:**
 - `source_schema` / `source_table`: upstream table
-- `join_key`: column to join on
+- `join_columns`: column to join on
 - `source_filter` (optional): SQL filter for source records
 
 **Result details (v1.1.0+):**
@@ -705,7 +710,7 @@ flow_completeness:
   blocking: true
   source_schema: my_schema_bronze
   source_table: raw_events
-  join_key: transaction_id
+  join_columns: transaction_id
   source_filter: "status = 'SENT'"
 ```
 
@@ -730,8 +735,8 @@ flow_completeness:
 **Key configuration:**
 - `column`: Column to count distinct values (required)
 - `expected`: Exact expected distinct count (optional)
-- `min`: Minimum expected distinct count (optional)
-- `max`: Maximum expected distinct count (optional)
+- `min_distinct_count`: Minimum expected distinct count (optional)
+- `max_distinct_count`: Maximum expected distinct count (optional)
 
 **Result details:** `distinct_count=<count>; expected=<value>` or `distinct_count=<count>; min=<min>; max=<max>`
 
@@ -759,8 +764,8 @@ distinct_count:
   severity: warning
   blocking: false
   column: category_id
-  min: 10
-  max: 100
+  min_distinct_count: 10
+  max_distinct_count: 100
 ```
 
 **Example Output:**
@@ -793,7 +798,7 @@ distinct_count:
 - `allowed_values`: Dict of field -> allowed value list (optional)
 - `array_element`: If true, validates array elements (default: true)
 - `sample_size`: Rows to sample for validation (default: 1000, 0 = all)
-- `max_parse_failure_pct`: Max percentage of rows that may fail JSON parsing before the check hard-fails (default: 0)
+- `max_parse_failure_percent`: Max percentage of rows that may fail JSON parsing before the check hard-fails (default: 0)
 - `threshold`: Optional threshold configuration
   - `max_failure_percent`: Maximum allowed percentage of validation failures (0-100)
   - `max_failure_count`: Maximum allowed number of validation failures
@@ -862,7 +867,7 @@ json_schema:
 - Supports threshold for acceptable failure rate
 
 **Key configuration:**
-- `check`: SQL boolean expression that must be true (required)
+- `predicate`: SQL boolean expression that must be true for every row (required)
 - `name`: Human-readable name for the rule (default: "business_rule")
 - `threshold`: Optional threshold configuration
   - `max_failure_percent`: Maximum allowed percentage of failing rows (0-100)
@@ -883,7 +888,7 @@ business_rules:
   severity: critical
   blocking: true
   name: valid_amounts
-  check: "amount >= 0 AND amount < 1000000"
+  predicate: "amount >= 0 AND amount < 1000000"
 ```
 
 **Example with threshold:**
@@ -894,7 +899,7 @@ business_rules:
   severity: warning
   blocking: false
   name: status_consistency
-  check: "status != 'COMPLETED' OR completed_at IS NOT NULL"
+  predicate: "status != 'COMPLETED' OR completed_at IS NOT NULL"
   threshold:
     max_failure_percent: 1.0  # Allow up to 1% rule violations
 ```
@@ -918,7 +923,7 @@ business_rules:
 - Fails if the delay exceeds the allowed threshold
 
 **Key configuration:**
-- `column`: timestamp column to check (required)
+- `timestamp_column`: timestamp column to check (required)
 - `max_delay_hours`: maximum acceptable delay (default: 24)
 
 **Result details:** `latest=<timestamp>; age_h=<hours>; max_delay_h=<threshold>`
@@ -935,7 +940,7 @@ freshness:
   enabled: true
   severity: warning
   blocking: false
-  column: updated_at
+  timestamp_column: updated_at
   max_delay_hours: 48
 ```
 
@@ -999,21 +1004,19 @@ silver:
           enabled: true
           severity: critical
           blocking: true
-          key_column: transaction_id,product_id
+          key_columns: transaction_id,product_id
 
         business_rules:
           enabled: true
           severity: critical
           blocking: true
           name: valid_amounts
-          check: "amount >= 0 AND amount < 1000000"
+          predicate: "amount >= 0 AND amount < 1000000"
 
         referential_integrity:
           enabled: true
           severity: critical
           blocking: true
-          schema: my_schema_silver
-          table: transactions
           source_column: product_id
           target_schema: my_schema_gold
           target_table: products
@@ -1023,8 +1026,8 @@ silver:
           enabled: true
           severity: critical
           blocking: true
-          left_timestamp: updated_at
-          right_timestamp: created_at
+          left_timestamp_column: updated_at
+          right_timestamp_column: created_at
 
     # Orders table
     - catalog: my_catalog
@@ -1035,13 +1038,13 @@ silver:
           enabled: true
           severity: critical
           blocking: true
-          key_column: order_id
+          key_columns: order_id
 
         status_transition:
           enabled: true
           severity: critical
           blocking: true
-          key_column: order_id
+          key_columns: order_id
           status_column: status
           timestamp_column: updated_at
           allowed_flow:
@@ -1054,12 +1057,12 @@ silver:
           enabled: true
           severity: critical
           blocking: true
-          join_key: order_id
+          join_columns: order_id
           detail_schema: sales_silver
           detail_table: order_items
           detail_amount_column: amount
           header_amount_column: total_amount
-          tolerance: 0.01
+          tolerance_abs: 0.01
 
         compare_metric:
           enabled: true

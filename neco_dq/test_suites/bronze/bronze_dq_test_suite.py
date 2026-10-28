@@ -11,10 +11,11 @@ from pyspark.sql.functions import col, length, expr, upper
 from pyspark.sql.types import BinaryType
 
 from neco_dq.test_suites.base_test_suite import DQTestSuite
+from neco_dq.test_suites.shared_checks import BusinessRulesCheckMixin, JsonSchemaCheckMixin
 from neco_dq.core.io.result_writer import DQResultWriter
 
 
-class SparkBronzeDQTestSuite(DQTestSuite):
+class SparkBronzeDQTestSuite(DQTestSuite, JsonSchemaCheckMixin, BusinessRulesCheckMixin):
     """
     Bronze Data Quality Test Suite
     - check-centric
@@ -77,11 +78,14 @@ class SparkBronzeDQTestSuite(DQTestSuite):
 
         Config:
             history_table: Table with historical DQ results
-            allowed_deviation_percent: Max allowed deviation from previous count (default: 40)
+            max_deviation_percent: Max allowed deviation from previous count (default: 40)
+                                   (legacy alias: ``allowed_deviation_percent``)
         """
         start_time = datetime.now(UTC)
         history_table = cfg.get("history_table")
-        allowed_dev = cfg.get("allowed_deviation_percent", 40)
+        # Canonical key is ``max_deviation_percent``; fall back to the legacy
+        # ``allowed_deviation_percent`` alias for configs that bypass alias resolution.
+        allowed_dev = cfg.get("max_deviation_percent", cfg.get("allowed_deviation_percent", 40))
 
         current = df.count()
 
@@ -277,7 +281,8 @@ class SparkBronzeDQTestSuite(DQTestSuite):
         Verify table freshness using Delta table metadata (lastModified).
 
         Config:
-            max_days_stale: Maximum allowed days since last modification (default: 2)
+            max_staleness_days: Maximum allowed days since last modification (default: 2)
+                                (legacy alias: ``max_days_stale``)
         """
         start_time = datetime.now(UTC)
         fq_table = f"{table_ctx['catalog']}.{table_ctx['schema']}.{table_ctx['table']}"
@@ -303,7 +308,9 @@ class SparkBronzeDQTestSuite(DQTestSuite):
             days = (now - last_modified).total_seconds() / 86400
             hours = days * 24
 
-            base_days = float(cfg.get("max_days_stale", 2))
+            # Canonical key is ``max_staleness_days``; fall back to the legacy
+            # ``max_days_stale`` alias for configs that bypass alias resolution.
+            base_days = float(cfg.get("max_staleness_days", cfg.get("max_days_stale", 2)))
             passed = days <= base_days
 
             failure_stats = None
@@ -867,11 +874,15 @@ class SparkBronzeDQTestSuite(DQTestSuite):
                 decode_filter = f"decode({col_name}, 'UTF-8') IS NULL"
 
             elif fmt == "base64_json":
-                decoded = df.select(expr(f"decode(unbase64({col_name}), 'UTF-8') as decoded"))
-                failed_count = decoded.filter(
-                    expr("decoded IS NULL OR NOT (decoded LIKE '{%' OR decoded LIKE '[%')")
-                ).count()
-                decode_filter = f"decode(unbase64({col_name}), 'UTF-8') IS NULL OR NOT (decode(unbase64({col_name}), 'UTF-8') LIKE '{{%' OR decode(unbase64({col_name}), 'UTF-8') LIKE '[%')"
+                # ``try_to_binary`` yields NULL (not an error) for malformed base64 under
+                # ANSI / Photon strict mode, so a single bad row is counted as a failure
+                # instead of raising CONVERSION_INVALID_INPUT and crashing the whole check.
+                # JSON structure is validated via the first decoded byte ('{' = 0x7B,
+                # '[' = 0x5B), which avoids charset decoding entirely.
+                bin_expr = f"try_to_binary({col_name}, 'BASE64')"
+                first_byte = f"hex(substring({bin_expr}, 1, 1))"
+                decode_filter = f"{bin_expr} IS NULL OR {first_byte} NOT IN ('7B', '5B')"
+                failed_count = df.filter(expr(decode_filter)).count()
 
             elif fmt == "avro":
                 failed_count = df.filter(expr(f"substring({col_name},1,1) != x'00'")).count()

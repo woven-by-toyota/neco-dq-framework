@@ -44,7 +44,7 @@ gold:
           enabled: true
           severity: critical
           blocking: true
-          column: paid_at
+          timestamp_column: paid_at
           max_delay_hours: 24
 ```
 
@@ -80,9 +80,9 @@ gold:
           severity: critical
           blocking: true
           source_silver: my_catalog.my_schema_silver.payments
-          gold: amount
-          silver: amount
-          tolerance: 0.01
+          gold_expr: amount
+          silver_expr: amount
+          tolerance_percent: 0.01
 ```
 
 **Behavior:**
@@ -142,12 +142,12 @@ checks support it:
 | `business_rules` | yes (shared check) |
 | `json_schema` | yes (shared check) |
 | `compare_metric` | no (uses operators and value tolerance) |
-| `reconciliation_expr` | no (uses `tolerance`) |
+| `reconciliation_expr` | no (uses `tolerance_percent`) |
 | `referential_integrity` | no (strict: fails if any FK is missing) |
-| `coverage` | no (uses `tolerance_pct`) |
-| `volume` | no (uses `min`/`max` bounds or history `tolerance_pct`) |
+| `coverage` | no (uses `tolerance_percent`) |
+| `volume` | no (uses `min_value`/`max_value` bounds or history `tolerance_percent`) |
 | `freshness` | no (uses `max_delay_hours`) |
-| `cross_gold` | no (uses `tolerance`) |
+| `cross_gold` | no (uses `tolerance_abs`) |
 | `completeness` | no (binary pass/fail) |
 | `trend` | no (uses history deviation) |
 | `distinct_count` | no (binary pass/fail) |
@@ -192,7 +192,7 @@ checks support it:
 
 **Key configuration:**
 - `name`: descriptive name for the rule
-- `check`: SQL expression that must evaluate to true
+- `predicate`: SQL expression that must evaluate to true
 - `threshold` (optional): failure tolerance
   - `max_failure_percent`: maximum allowed percentage of failed rows (0-100)
   - `max_failure_count`: maximum allowed number of failed rows
@@ -212,7 +212,7 @@ business_rules:
   severity: critical
   blocking: true
   name: amount_and_currency_valid
-  check: "amount >= 0 AND currency IS NOT NULL"
+  predicate: "amount >= 0 AND currency IS NOT NULL"
 ```
 
 **Example with threshold:**
@@ -223,7 +223,7 @@ business_rules:
   severity: warning
   blocking: false
   name: amount_positive
-  check: "amount >= 0"
+  predicate: "amount >= 0"
   threshold:
     max_failure_percent: 1.0  # Allow up to 1% rule violations
 ```
@@ -352,10 +352,10 @@ compare_metric:
 
 **Key configuration:**
 - `source_silver`: fully qualified Silver table name
-- `gold`: SQL expression to aggregate Gold data
-- `silver`: SQL expression to aggregate Silver data
+- `gold_expr`: SQL expression to aggregate Gold data
+- `silver_expr`: SQL expression to aggregate Silver data
 - `group_by` (optional): columns to group by for reconciliation
-- `tolerance`: acceptable percentage difference (default: 1.0)
+- `tolerance_percent`: acceptable percentage difference (default: 1.0)
 - `name` (optional): descriptive name
 
 **Result details:** `mismatched_groups=<count>; max_diff=<amount>`
@@ -376,13 +376,13 @@ reconciliation_expr:
 
   source_silver: my_catalog.my_schema_silver.orders
 
-  gold: "SUM(unique_customers)"
-  silver: "COUNT(DISTINCT customer_id)"
+  gold_expr: "SUM(unique_customers)"
+  silver_expr: "COUNT(DISTINCT customer_id)"
 
   group_by:
     - order_id
 
-  tolerance: 5.0
+  tolerance_percent: 5.0
 ```
 
 **Example Output:**
@@ -512,11 +512,11 @@ uniqueness:
 
 **Key configuration:**
 - `gold_expr`: SQL expression to aggregate Gold data
-- `gold_join_keys`: columns to join Gold data
+- `gold_join_columns`: columns to join Gold data
 - `silver_expr`: SQL expression to aggregate Silver data
 - `silver_table`: fully qualified Silver table name
-- `silver_join_keys`: columns to join Silver data
-- `tolerance_pct`: acceptable coverage gap (default: 1.0%)
+- `silver_join_columns`: columns to join Silver data
+- `tolerance_percent`: acceptable coverage gap (default: 1.0%)
 - `name` (optional): descriptive name
 
 **Result details:** `coverage=<pct>%; tolerance=<pct>%`
@@ -536,13 +536,13 @@ coverage:
   name: orders_n_coverage
 
   gold_expr: "SUM(orders_n)"
-  gold_join_keys: [order_id]
+  gold_join_columns: [order_id]
 
   silver_expr: "COUNT(DISTINCT transaction_id)"
   silver_table: my_catalog.my_schema_silver.orders
-  silver_join_keys: [order_id]
+  silver_join_columns: [order_id]
 
-  tolerance_pct: 5.0
+  tolerance_percent: 5.0
 ```
 
 **Example Output:**
@@ -569,15 +569,15 @@ coverage:
 
 **Key configuration:**
 - `metric`: SQL expression to compute volume
-- `min` (optional): minimum allowed value (stateless bounds mode)
-- `max` (optional): maximum allowed value (stateless bounds mode)
+- `min_value` (optional): minimum allowed value (stateless bounds mode)
+- `max_value` (optional): maximum allowed value (stateless bounds mode)
 - `group_by` (optional): columns to group by
 - `name` (optional): descriptive name (also used to match history rows)
 - `history` (optional): historical comparison settings
   - `table`: history table location
   - `window`: number of historical records to consider (default: 7)
   - `min_history`: minimum historical records required (default: 3)
-  - `tolerance_pct`: allowed deviation from the historical baseline (default: 10)
+  - `tolerance_percent`: allowed deviation from the historical baseline (default: 10)
 
 **Result details:** `anomalies=<count>; max_deviation=<pct>%`
 
@@ -595,12 +595,12 @@ volume:
   blocking: false
 
   metric: "COUNT(*)"
-  tolerance_pct: 20
 
   history:
     table: my_dq_catalog.dq_metadata.dq_test_history
     window: 7
     min_history: 3
+    tolerance_percent: 20
 ```
 
 **Example 2: Stateless mode with grouping**
@@ -640,7 +640,7 @@ volume:
 - Fails if delay exceeds threshold
 
 **Key configuration:**
-- `column`: timestamp column to check
+- `timestamp_column`: timestamp column to check
 - `max_delay_hours`: maximum acceptable delay (default: 24)
 
 **Result details:** `latest=<timestamp>; delay_hours=<hours>`
@@ -657,7 +657,7 @@ freshness:
   enabled: true
   severity: critical
   blocking: true
-  column: paid_at
+  timestamp_column: paid_at
   max_delay_hours: 24
 ```
 
@@ -681,11 +681,11 @@ freshness:
 - Allows configurable tolerance
 
 **Key configuration:**
-- `left_table`: left Gold table (schema.table format)
+- `left_table` (optional): left Gold table (schema.table format); defaults to the table under validation
 - `right_table`: right Gold table (schema.table format)
 - `left_expr`: SQL expression for left table
 - `right_expr`: SQL expression for right table
-- `tolerance`: acceptable difference (default: 0.01)
+- `tolerance_abs`: acceptable absolute difference (default: 0.01)
 
 **Result details:** `difference=<amount>; tolerance=<amount>`
 
@@ -705,7 +705,7 @@ cross_gold:
   right_table: my_schema_gold.monthly_revenue
   left_expr: "SUM(amount)"
   right_expr: "SUM(amount)"
-  tolerance: 0.01
+  tolerance_abs: 0.01
 ```
 
 **Example Output:**
@@ -847,8 +847,8 @@ trend:
 **Key configuration:**
 - `column`: Column to count distinct values (required)
 - `expected`: Exact expected distinct count (optional)
-- `min`: Minimum expected distinct count (optional)
-- `max`: Maximum expected distinct count (optional)
+- `min_distinct_count`: Minimum expected distinct count (optional)
+- `max_distinct_count`: Maximum expected distinct count (optional)
 
 **Result details:** `distinct_count=<count>; expected=<value>` or `distinct_count=<count>; min=<min>; max=<max>`
 
@@ -865,8 +865,8 @@ distinct_count:
   severity: warning
   blocking: false
   column: product_category
-  min: 5
-  max: 50
+  min_distinct_count: 5
+  max_distinct_count: 50
 ```
 
 **Example Output:**
@@ -1013,9 +1013,9 @@ gold:
           blocking: true
           name: amount_reconciliation
           source_silver: my_catalog.my_schema_silver.payments
-          gold: amount
-          silver: amount
-          tolerance: 0.01
+          gold_expr: amount
+          silver_expr: amount
+          tolerance_percent: 0.01
 
         # Validate uniqueness
         uniqueness:
@@ -1029,7 +1029,7 @@ gold:
           enabled: true
           severity: critical
           blocking: true
-          column: paid_at
+          timestamp_column: paid_at
           max_delay_hours: 24
 
         # Business rules
@@ -1038,7 +1038,7 @@ gold:
           severity: critical
           blocking: true
           name: valid_amounts
-          check: "amount >= 0 AND currency IS NOT NULL"
+          predicate: "amount >= 0 AND currency IS NOT NULL"
 
     # Orders aggregation
     - catalog: my_catalog
@@ -1074,11 +1074,11 @@ gold:
           blocking: false
           name: customers_reconciliation
           source_silver: my_catalog.my_schema_silver.orders
-          gold: "SUM(unique_customers)"
-          silver: "COUNT(DISTINCT customer_id)"
+          gold_expr: "SUM(unique_customers)"
+          silver_expr: "COUNT(DISTINCT customer_id)"
           group_by:
             - order_id
-          tolerance: 5.0
+          tolerance_percent: 5.0
 
         # Coverage check
         coverage:
@@ -1087,11 +1087,11 @@ gold:
           blocking: false
           name: orders_coverage
           gold_expr: "SUM(orders_n)"
-          gold_join_keys: [order_id]
+          gold_join_columns: [order_id]
           silver_expr: "COUNT(DISTINCT transaction_id)"
           silver_table: my_catalog.my_schema_silver.orders
-          silver_join_keys: [order_id]
-          tolerance_pct: 5.0
+          silver_join_columns: [order_id]
+          tolerance_percent: 5.0
 
         # Volume anomaly detection
         volume:
@@ -1113,11 +1113,11 @@ gold:
           enabled: true
           severity: critical
           blocking: true
-          left_table: my_schema_gold.revenue_daily
+          # left_table defaults to the table under validation (revenue_daily)
           right_table: my_schema_gold.revenue_monthly
           left_expr: "SUM(amount)"
           right_expr: "SUM(amount)"
-          tolerance: 0.01
+          tolerance_abs: 0.01
 
         # Referential integrity to Silver
         referential_integrity:
@@ -1137,11 +1137,11 @@ gold:
           severity: warning
           blocking: false
           metric: "COUNT(*)"
-          tolerance_pct: 20
           history:
             table: my_dq_catalog.dq_metadata.dq_test_history
             window: 7
             min_history: 3
+            tolerance_percent: 20
 ```
 
 ---

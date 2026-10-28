@@ -69,7 +69,7 @@ bronze:
       enabled: true
       severity: warning
       blocking: false
-      max_days_stale: 2
+      max_staleness_days: 2
 
   tables:
     - catalog: my_catalog
@@ -127,6 +127,8 @@ checks support it:
 | Check | Supports Threshold |
 |-------|-------------------|
 | `mandatory_fields` | yes |
+| `json_schema` | yes (shared check) |
+| `business_rules` | yes (shared check) |
 | `binary_not_null` | yes |
 | `binary_non_empty` | yes |
 | `binary_size_guard` | yes |
@@ -134,9 +136,9 @@ checks support it:
 | `binary_version_header_check` | yes |
 | `binary_schema_fingerprint` | yes |
 | `record_count` | no (binary pass/fail) |
-| `record_count_anomaly` | no (uses `allowed_deviation_percent`) |
+| `record_count_anomaly` | no (uses `max_deviation_percent`) |
 | `freshness` | no (uses `max_delay_hours`) |
-| `table_freshness` | no (uses `max_days_stale`) |
+| `table_freshness` | no (uses `max_staleness_days`) |
 | `schema_drift` | no (binary pass/fail) |
 | `binary_type` | no (binary pass/fail) |
 
@@ -154,6 +156,8 @@ checks support it:
 | `table_freshness` | `_check_table_freshness` | Validate table metadata freshness |
 | `schema_drift` | `_check_schema_drift` | Prevent unexpected schema changes |
 | `mandatory_fields` | `_check_mandatory_fields` | Ensure required columns exist and are non-null |
+| `json_schema` | `_check_json_schema` | Validate JSON column structure (shared check) |
+| `business_rules` | `_check_business_rules` | Validate SQL expressions (shared check) |
 | `binary_not_null` | `_check_binary_not_null` | Binary column must exist and have no nulls |
 | `binary_non_empty` | `_check_binary_non_empty` | Binary payloads must not be empty |
 | `binary_size_guard` | `_check_binary_size_guard` | Validate binary payload size bounds |
@@ -217,7 +221,7 @@ record_count:
 
 **Key configuration:**
 - `history_table`: table used to retrieve historical values
-- `allowed_deviation_percent` (default: 40%)
+- `max_deviation_percent` (default: 40%)
 
 **Typical use:**
 - Catch partial loads or duplicates
@@ -234,7 +238,7 @@ record_count_anomaly:
   severity: warning
   blocking: false
   history_table: my_dq_catalog.dq_metadata.dq_test_history
-  allowed_deviation_percent: 40
+  max_deviation_percent: 40
 ```
 
 **Example Output:**
@@ -296,7 +300,7 @@ freshness:
 - Fails if it exceeds the configured threshold
 
 **Key configuration:**
-- `max_days_stale` (default: 2)
+- `max_staleness_days` (default: 2)
 
 **Typical use:**
 - Validate batch pipelines
@@ -309,7 +313,7 @@ table_freshness:
   enabled: true
   severity: warning
   blocking: false
-  max_days_stale: 2
+  max_staleness_days: 2
 ```
 
 **Example Output:**
@@ -871,6 +875,90 @@ partition_exists:
 
 ---
 
+## Shared Checks
+
+`json_schema` and `business_rules` are shared checks (from `SharedChecksMixin`,
+composed into every suite) also available at the Bronze layer. At Bronze they are
+intended for **structural / technical** validation of raw payloads, not domain
+logic, which belongs in Silver/Gold (see [Design Guidelines](#design-guidelines)).
+The configuration is identical across suites; the full reference lives in
+[Silver › json_schema](silver.md#json_schema) and
+[Silver › business_rules](silver.md#business_rules).
+
+### json_schema
+
+**Purpose:** Validates JSON column structure, required fields, field types, and allowed values, useful for raw API/event payloads landed in Bronze.
+
+**Key configuration:**
+- `column`: JSON column name (required)
+- `required_fields`: List of fields that must exist (optional, supports dot-notation)
+- `field_types`: Dict of field -> expected type (optional)
+- `allowed_values`: Dict of field -> allowed value list (optional)
+- `array_element`: If true, validates array elements (default: true)
+- `sample_size`: Rows to sample for validation (default: 1000, 0 = all)
+- `max_parse_failure_percent`: Max percentage of rows that may fail JSON parsing before the check hard-fails (default: 0)
+- `threshold`: Optional threshold configuration (`max_failure_percent`, `max_failure_count`)
+
+**Example:**
+
+```yaml
+json_schema:
+  enabled: true
+  severity: warning
+  blocking: false
+  column: raw_payload
+  required_fields:
+    - event_id
+    - event_type
+    - payload.source    # Nested field validation
+  field_types:
+    event_id: string
+    retry_count: int
+  threshold:
+    max_failure_percent: 5.0  # Tolerate up to 5% malformed payloads at ingestion
+```
+
+**Example Output:**
+
+| Status | Details |
+|--------|---------|
+| PASS | `JSON schema OK: 5000 elements validated` |
+| FAIL | `JSON validation failed: 2 missing fields, 1 type mismatches in 'raw_payload'` |
+| FAIL | `JSON parse failed: 50 rows (1.0%) exceed 0% limit` |
+
+---
+
+### business_rules
+
+**Purpose:** Validates that rows satisfy a SQL boolean expression. At Bronze keep predicates **technical** (payload sanity, format bounds, non-null invariants) rather than business logic.
+
+**Key configuration:**
+- `predicate`: SQL boolean expression that must be true for every row (required)
+- `name`: Human-readable name for the rule (default: "business_rule")
+- `threshold`: Optional threshold configuration (`max_failure_percent`, `max_failure_count`)
+
+**Example:**
+
+```yaml
+business_rules:
+  enabled: true
+  severity: warning
+  blocking: false
+  name: ingested_at_present
+  predicate: "ingested_at IS NOT NULL AND length(raw_payload) > 0"
+  threshold:
+    max_failure_percent: 1.0  # Tolerate up to 1% malformed records
+```
+
+**Example Output:**
+
+| Status | Details |
+|--------|---------|
+| PASS | `Rule 'ingested_at_present' passed (10000 rows)` |
+| FAIL | `Found 150 rows violating rule 'ingested_at_present' (1.5% of 10000)` |
+
+---
+
 ## Design Guidelines
 
 ### Do
@@ -919,14 +1007,14 @@ bronze:
       enabled: true
       severity: warning
       blocking: false
-      max_days_stale: 2
+      max_staleness_days: 2
 
     record_count_anomaly:
       enabled: true
       severity: warning
       blocking: false
       history_table: my_dq_catalog.dq_metadata.dq_test_history
-      allowed_deviation_percent: 40
+      max_deviation_percent: 40
 
   # Tables with specific overrides
   tables:

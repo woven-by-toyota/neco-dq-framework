@@ -64,7 +64,7 @@ class TestSilverIdempotency:
     def test_idempotency_pass(self, silver_suite, df_unique):
         """Idempotency should pass when all key combinations are unique."""
         with allure.step("Setup test data"):
-            cfg = {"key_column": "id,code"}
+            cfg = {"key_columns": "id,code"}
 
         with allure.step("Execute idempotency check"):
             passed, details, column = silver_suite._check_idempotency(df_unique, cfg)
@@ -80,7 +80,7 @@ class TestSilverIdempotency:
     def test_idempotency_fail(self, silver_suite, df_duplicates):
         """Idempotency should fail when duplicate key combinations exist."""
         with allure.step("Setup test data"):
-            cfg = {"key_column": "id,code"}
+            cfg = {"key_columns": "id,code"}
 
         with allure.step("Execute idempotency check"):
             passed, details, column = silver_suite._check_idempotency(df_duplicates, cfg)
@@ -111,7 +111,7 @@ class TestSilverIdempotency:
     def test_idempotency_key_column_list(self, silver_suite, df_unique):
         """Idempotency should pass when key_column is provided as a list."""
         with allure.step("Setup test data"):
-            cfg = {"key_column": ["id", "code"]}
+            cfg = {"key_columns": ["id", "code"]}
 
         with allure.step("Execute idempotency check"):
             passed, details, column = silver_suite._check_idempotency(df_unique, cfg)
@@ -127,7 +127,7 @@ class TestSilverIdempotency:
     def test_idempotency_debug_fields_on_failure(self, silver_suite, df_duplicates):
         """Idempotency should set debug fields (failure_stats, investigation_query, execution) on failure."""
         with allure.step("Setup test data"):
-            cfg = {"key_column": "id,code"}
+            cfg = {"key_columns": "id,code"}
 
         with allure.step("Execute idempotency check"):
             passed, _details, _column = silver_suite._check_idempotency(df_duplicates, cfg)
@@ -155,7 +155,7 @@ class TestSilverStatusTransition:
         """Status transition should pass when all transitions follow allowed flow."""
         with allure.step("Setup test data"):
             cfg = {
-                "key_column": "entity_id",
+                "key_columns": "entity_id",
                 "status_column": "status",
                 "timestamp_column": "ts",
                 "allowed_flow": ["pending", "active", "completed"],
@@ -176,7 +176,7 @@ class TestSilverStatusTransition:
         """Status transition should fail when transitions violate allowed flow."""
         with allure.step("Setup test data"):
             cfg = {
-                "key_column": "entity_id",
+                "key_columns": "entity_id",
                 "status_column": "status",
                 "timestamp_column": "ts",
                 "allowed_flow": ["pending", "active", "completed"],
@@ -195,7 +195,7 @@ class TestSilverStatusTransition:
     def test_status_transition_missing_config(self, silver_suite, df_transitions):
         """Status transition should fail when required config is missing."""
         with allure.step("Setup test data"):
-            cfg = {"key_column": "entity_id"}  # Missing status_column and timestamp_column
+            cfg = {"key_columns": "entity_id"}  # Missing status_column and timestamp_column
 
         with allure.step("Execute status transition check"):
             passed, details, _column = silver_suite._check_status_transition(df_transitions, cfg)
@@ -211,7 +211,7 @@ class TestSilverStatusTransition:
         """Status transition should detect unknown statuses and report via failure_stats."""
         with allure.step("Setup test data"):
             cfg = {
-                "key_column": "entity_id",
+                "key_columns": "entity_id",
                 "status_column": "status",
                 "timestamp_column": "ts",
                 "allowed_flow": ["pending", "active", "completed"],
@@ -240,7 +240,7 @@ class TestSilverCardinality:
     def test_cardinality_pass(self, silver_suite, df_cardinality):
         """Cardinality should pass when all groups have at least minimum rows."""
         with allure.step("Setup test data"):
-            cfg = {"group_by": "group_id", "min": 1}
+            cfg = {"group_by": "group_id", "min_count": 1}
 
         with allure.step("Execute cardinality check"):
             passed, details, column = silver_suite._check_cardinality(df_cardinality, cfg)
@@ -257,7 +257,7 @@ class TestSilverCardinality:
         """Cardinality should fail when some groups have fewer than minimum rows."""
         with allure.step("Setup test data"):
             # G3 has only 1 item, so min=2 should fail
-            cfg = {"group_by": "group_id", "min": 2}
+            cfg = {"group_by": "group_id", "min_count": 2}
 
         with allure.step("Execute cardinality check"):
             passed, details, column = silver_suite._check_cardinality(df_cardinality, cfg)
@@ -297,7 +297,7 @@ class TestSilverCardinality:
                 ("B", "X", 1),
             ]
             df = spark.createDataFrame(data, ["group1", "group2", "item_id"])
-            cfg = {"group_by": ["group1", "group2"], "min": 1}
+            cfg = {"group_by": ["group1", "group2"], "min_count": 1}
 
         with allure.step("Execute cardinality check"):
             passed, details, column = silver_suite._check_cardinality(df, cfg)
@@ -320,7 +320,7 @@ class TestSilverRowTemporalConsistency:
         """Row temporal consistency should pass when left >= right timestamps."""
         with allure.step("Setup test data"):
             # Note: left_timestamp >= right_timestamp means end_time >= start_time
-            cfg = {"left_timestamp": "end_time", "right_timestamp": "start_time"}
+            cfg = {"left_timestamp_column": "end_time", "right_timestamp_column": "start_time"}
 
         with allure.step("Execute row temporal consistency check"):
             passed, details, column = silver_suite._check_row_temporal_consistency(df_temporal, cfg)
@@ -336,7 +336,7 @@ class TestSilverRowTemporalConsistency:
     def test_row_temporal_fail(self, silver_suite, df_temporal_invalid):
         """Row temporal consistency should fail when left < right timestamps."""
         with allure.step("Setup test data"):
-            cfg = {"left_timestamp": "end_time", "right_timestamp": "start_time"}
+            cfg = {"left_timestamp_column": "end_time", "right_timestamp_column": "start_time"}
 
         with allure.step("Execute row temporal consistency check"):
             passed, details, column = silver_suite._check_row_temporal_consistency(df_temporal_invalid, cfg)
@@ -352,7 +352,7 @@ class TestSilverRowTemporalConsistency:
     def test_row_temporal_missing_config(self, silver_suite, df_temporal):
         """Row temporal consistency should fail when required config is missing."""
         with allure.step("Setup test data"):
-            cfg = {"left_timestamp": "end_time"}  # Missing right_timestamp
+            cfg = {"left_timestamp_column": "end_time"}  # Missing right_timestamp_column
 
         with allure.step("Execute row temporal consistency check"):
             passed, details, _column = silver_suite._check_row_temporal_consistency(df_temporal, cfg)
@@ -367,7 +367,7 @@ class TestSilverRowTemporalConsistency:
     def test_row_temporal_debug_fields_on_failure(self, silver_suite, df_temporal_invalid):
         """Row temporal consistency should set debug fields on failure."""
         with allure.step("Setup test data"):
-            cfg = {"left_timestamp": "end_time", "right_timestamp": "start_time"}
+            cfg = {"left_timestamp_column": "end_time", "right_timestamp_column": "start_time"}
 
         with allure.step("Execute row temporal consistency check"):
             passed, _details, _column = silver_suite._check_row_temporal_consistency(df_temporal_invalid, cfg)

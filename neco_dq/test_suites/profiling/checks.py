@@ -42,7 +42,8 @@ class ProfilingChecksMixin:
                 last_modified = last_modified.replace(tzinfo=UTC)
 
             days_stale = (datetime.now(UTC) - last_modified).total_seconds() / 86400
-            max_days = float(self.checks_cfg.get("table_freshness", {}).get("max_days_stale", 2))
+            tf_cfg = self.checks_cfg.get("table_freshness", {})
+            max_days = float(tf_cfg.get("max_staleness_days", tf_cfg.get("max_days_stale", 2)))
 
             passed = days_stale <= max_days
             details = f"days_stale={round(days_stale, 2)} threshold={max_days}"
