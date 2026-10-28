@@ -1,16 +1,18 @@
 version: 2
 updates:
-  # Python dependencies (uv resolves the pip ecosystem via pyproject.toml + uv.lock)
-  - package-ecosystem: "pip"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 10
-    commit-message:
-      prefix: "chore"
-      include: "scope"
-    labels:
-      - "dependencies"
+  # Python dependencies: disabled. Versions are pinned to match the Databricks
+  # runtime; automatic bumps can introduce incompatibilities or warnings there.
+  # Uncomment to re-enable (uv resolves the pip ecosystem via pyproject.toml + uv.lock).
+  # - package-ecosystem: "pip"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"
+  #   open-pull-requests-limit: 10
+  #   commit-message:
+  #     prefix: "chore"
+  #     include: "scope"
+  #   labels:
+  #     - "dependencies"
 
   # GitHub Actions used in workflows
   - package-ecosystem: "github-actions"
