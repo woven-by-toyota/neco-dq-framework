@@ -1,2 +1,3 @@
+# WIP: preliminary template registry, not the final format. Subject to change.
 silver_standard: config/silver/silver_standard_template.yaml
 ge_standard: config/ge/ge_standard_template.yaml

@@ -15,6 +15,9 @@ from neco_dq.config.context import DQContext
 # ---------------------------------------------------------
 # Registry (legacy templates)
 # ---------------------------------------------------------
+# NOTE (WIP): the tag-based template registry below is functional but preliminary.
+# It is not the final design; the intended template system is broader (see
+# docs/configuration/template-system.md). Do not treat this as a stable API.
 DEFAULT_TEMPLATE_REGISTRY = Path(__file__).resolve().parents[1] / "config" / "template_registry.yaml"
 
 # ---------------------------------------------------------
@@ -210,6 +213,12 @@ def _resolve_legacy_yaml(path: Path, context: DQContext | None = None) -> dict[s
 # template registry
 # ---------------------------------------------------------
 def _resolve_template_tag(tag: str, context: DQContext | None = None) -> dict[str, Any]:
+    """Resolve a template tag to its config via the registry.
+
+    WIP: this is a working but incomplete version of the template system, kept
+    minimal on purpose. The final design is broader and may change the registry
+    format and resolution behavior. Not a stable interface yet.
+    """
     if not DEFAULT_TEMPLATE_REGISTRY.exists():
         raise FileNotFoundError(
             f"Config not found: '{tag}'. "
