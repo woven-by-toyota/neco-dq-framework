@@ -15,6 +15,9 @@ from neco_dq.test_suites.base_test_suite import DQTestSuite
 from neco_dq.test_suites.shared_checks import SharedChecksMixin
 from neco_dq.core.io.result_writer import DQResultWriter
 
+# A numeric token as written by str(int | float | Decimal), exponent included ("1e-06").
+_NUMBER = r"[0-9]+(?:\.[0-9]*)?(?:[eE][+-]?[0-9]+)?"
+
 
 class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
     """
@@ -695,7 +698,8 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
 
                 if baseline and baseline > 0:
                     tol = history_cfg.get("tolerance_percent", 10)
-                    deviation = abs(current_value - baseline) / baseline * 100
+                    # As floats: SUM over a DECIMAL column returns Decimal.
+                    deviation = abs(float(current_value) - baseline) / baseline * 100
                     passed = deviation <= tol
 
                     failure_stats = None
@@ -1100,7 +1104,7 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
         result: float | None = None
 
         # Try key=value patterns (most explicit)
-        pattern = r"(?:metric|value|current|gold|silver|count|total)[\s:=]+([0-9]+\.?[0-9]*)"
+        pattern = rf"(?:metric|value|current|gold|silver|count|total)[\s:=]+({_NUMBER})"
         match = re.search(pattern, details, re.IGNORECASE)
         if match:
             with contextlib.suppress(ValueError):
@@ -1108,32 +1112,32 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
 
         # Try "Volume OK: X" or "Count: X" style
         if result is None:
-            match = re.search(r"(?:Volume|Count|Rows?)[^0-9]*([0-9]+\.?[0-9]*)", details, re.IGNORECASE)
+            match = re.search(rf"(?:Volume|Count|Rows?)[^0-9]*({_NUMBER})", details, re.IGNORECASE)
             if match:
                 with contextlib.suppress(ValueError):
                     result = float(match.group(1))
 
         # Try "X rows" or "X records" style
         if result is None:
-            match = re.search(r"([0-9]+\.?[0-9]*)\s*(?:rows?|records?)", details, re.IGNORECASE)
+            match = re.search(rf"({_NUMBER})\s*(?:rows?|records?)", details, re.IGNORECASE)
             if match:
                 with contextlib.suppress(ValueError):
                     result = float(match.group(1))
 
         # Last resort: first number in the string (avoiding percentages)
         if result is None:
-            match = re.search(r"([0-9]+\.?[0-9]*)", details)
+            match = re.search(rf"({_NUMBER})", details)
             if match:
                 # A regex-matched numeric token should always parse; suppress
                 # the unlikely ValueError and fall through to return None.
                 with contextlib.suppress(ValueError):
                     val = float(match.group(1))
                     # Avoid extracting percentages as the metric
-                    pct_check = re.search(r"([0-9]+\.?[0-9]*)\s*%", details)
+                    pct_check = re.search(rf"({_NUMBER})\s*%", details)
                     if pct_check and pct_check.group(1) == match.group(1):
                         # This is a percentage, try to find another number
                         remaining = details[match.end() :]
-                        next_match = re.search(r"([0-9]+\.?[0-9]*)", remaining)
+                        next_match = re.search(rf"({_NUMBER})", remaining)
                         if next_match:
                             result = float(next_match.group(1))
                     else:
@@ -1241,18 +1245,19 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
             mid = len(sorted_vals) // 2
             baseline = sorted_vals[mid] if len(sorted_vals) % 2 == 1 else (sorted_vals[mid - 1] + sorted_vals[mid]) / 2
 
-            # Check deviation
+            # Check deviation (as floats: SUM over a DECIMAL column returns Decimal)
+            current = float(current_value)
             deviation_pct = (
                 100.0
-                if baseline == 0 and current_value != 0
-                else (0.0 if baseline == 0 else abs(current_value - baseline) / baseline * 100)
+                if baseline == 0 and current != 0
+                else (0.0 if baseline == 0 else abs(current - baseline) / baseline * 100)
             )
 
             # Check direction
             direction_checks = {
                 "stable": deviation_pct <= tolerance_pct,
-                "increasing": current_value >= baseline * (1 - tolerance_pct / 100),
-                "decreasing": current_value <= baseline * (1 + tolerance_pct / 100),
+                "increasing": current >= baseline * (1 - tolerance_pct / 100),
+                "decreasing": current <= baseline * (1 + tolerance_pct / 100),
             }
             if direction not in direction_checks:
                 return False, f"Invalid config: direction '{direction}' not supported", None

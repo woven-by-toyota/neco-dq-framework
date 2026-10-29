@@ -1310,6 +1310,70 @@ class TestGoldTrend:
         with allure.step("Verify: the failure message still carries the current value for later runs"):
             assert gold_suite._extract_metric_from_details(details) == 4
 
+    @staticmethod
+    def _metric_df(spark, kind: str):
+        """One-row table whose SUM(v) is very large, very small, or DECIMAL."""
+        from decimal import Decimal
+
+        if kind == "decimal":
+            return spark.createDataFrame([(Decimal("12345.67"),)], "v decimal(12,2)")
+        return spark.createDataFrame([({"large": 1e20, "small": 1e-06}[kind],)], "v double")
+
+    @staticmethod
+    def _history_view(spark, name: str, check_name: str, details: list[str]) -> str:
+        from datetime import UTC, datetime
+
+        rows = [
+            (check_name, "test", "test", "rt", datetime(2026, 1, d, tzinfo=UTC), det)
+            for d, det in enumerate(details, start=1)
+        ]
+        spark.createDataFrame(
+            rows, ["check_name", "catalog", "schema", "table", "run_timestamp", "details"]
+        ).createOrReplaceTempView(name)
+        return name
+
+    @pytest.mark.parametrize("kind", ["large", "small", "decimal"])
+    @allure.title("Volume history round-trip keeps an unchanged metric passing")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.EDGE_CASE, AllureTag.SPARK)
+    def test_volume_history_round_trip_unchanged_metric(self, spark, gold_suite, kind):
+        """Scientific-notation and DECIMAL values read back from history equal the current value."""
+        with allure.step("Persist three real volume results"):
+            ctx = {"catalog": "test", "schema": "test", "table": "rt"}
+            df = self._metric_df(spark, kind)
+            emitted = [gold_suite._check_volume(df, {"metric": "SUM(v)"}, ctx)[1] for _ in range(3)]
+            view = self._history_view(spark, f"test_history_volume_{kind}", "volume", emitted)
+
+        with allure.step("Run volume with history on the same data"):
+            cfg = {"metric": "SUM(v)", "history": {"table": view, "min_history": 3}}
+            passed, details, _column = gold_suite._check_volume(df, cfg, ctx)
+
+        with allure.step("Verify: no deviation against its own history"):
+            assert passed is True, details
+            assert "baseline" in details
+
+    @pytest.mark.parametrize("kind", ["large", "small", "decimal"])
+    @allure.title("Trend history round-trip keeps an unchanged metric passing")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.EDGE_CASE, AllureTag.SPARK)
+    def test_trend_history_round_trip_unchanged_metric(self, spark, gold_suite, kind):
+        """Scientific-notation and DECIMAL values read back from history equal the current value."""
+        with allure.step("Persist three real trend results (insufficient-history runs)"):
+            ctx = {"catalog": "test", "schema": "test", "table": "rt"}
+            df = self._metric_df(spark, kind)
+            empty = self._history_view(spark, f"test_history_trend_empty_{kind}", "trend", ["x"])
+            cfg = {"metric": "SUM(v)", "name": "t", "history": {"table": empty, "min_history": 3}}
+            emitted = [gold_suite._check_trend(df, cfg, ctx)[1] for _ in range(3)]
+            view = self._history_view(spark, f"test_history_trend_{kind}", "t", emitted)
+
+        with allure.step("Run trend with history on the same data"):
+            cfg = {"metric": "SUM(v)", "name": "t", "history": {"table": view, "min_history": 3}}
+            passed, details, _column = gold_suite._check_trend(df, cfg, ctx)
+
+        with allure.step("Verify: trend compares against history and passes"):
+            assert passed is True, details
+            assert "Trend OK" in details
+
     @allure.title("Trend fails when deviation exceeds tolerance")
     @allure.severity(AllureSeverity.CRITICAL)
     @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
