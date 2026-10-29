@@ -2,7 +2,9 @@
 
 ---
 
-## [Unreleased]
+## [1.4.1] - 2026-10-29
+
+Fixes from the review of the 1.4.0 check-parameter standardization.
 
 ### Fixed
 
@@ -11,6 +13,9 @@
 - Resolving deprecated nested keys (`history.tolerance_pct`, `lateness.column`) no longer mutates shared `default_checks`, so every table using them is counted in the deprecation report.
 - Check IDs of multi-instance checks stay as in 1.3.0 for unchanged configs using deprecated keys (e.g. `idempotency[key_column=id]`); IDs are built from the config as written.
 - List-valued join columns now work as documented: `gold_join_columns` / `silver_join_columns` in `reconciliation_expr` (with a length check), and `join_columns` in `cross_table_equality` and `temporal_consistency` join on every listed column.
+- `flow_completeness` with list-valued `join_columns` no longer crashes when reporting missing records (failure stats listed the key list as a single nested item).
+- Gold `coverage` accepts a single join column given as a string (`gold_join_columns: id`); it was split into characters.
+- Investigation queries of the join-based silver checks (`totals_consistency`, `cross_table_equality`, `temporal_consistency`, `flow_completeness`) are now fully rendered, with one join condition per key column; previously they returned the raw template with unresolved placeholders.
 
 ---
 
