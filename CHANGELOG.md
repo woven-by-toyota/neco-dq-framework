@@ -17,10 +17,13 @@ Fixes from the review of the 1.4.0 check-parameter standardization.
 - Gold `coverage` accepts a single join column given as a string (`gold_join_columns: id`); it was split into characters.
 - Investigation queries of the join-based silver checks (`totals_consistency`, `cross_table_equality`, `temporal_consistency`, `flow_completeness`) are now fully rendered, with one join condition per key column; previously they returned the raw template with unresolved placeholders.
 - Profiling suggestions are valid configs for the checks they target: `_reason` / `_confidence` / `_comment` annotations are no longer reported as unknown parameters (they failed the run under `unknown_check_params: error`); the `trend` suggestion now uses the `name` + `history: {table, window, tolerance_percent}` shape; bronze `table_freshness` and `record_count_anomaly` suggestions use `max_staleness_days` and `max_deviation_percent`.
+- `trend`, and `volume` with a `name`, now find their own history: the lookup uses the persisted check ID (`trend`, or `trend[name=...]` with several instances) instead of `name`, which never matched, so these checks always passed as "insufficient history".
+- `reconciliation_expr` rejects `gold_join_columns` without `silver_join_columns` (or vice versa) instead of silently comparing against all Silver rows.
+- Lakeview dashboard: the regression datasets (`regression_summary`, `regression_detail`) keep checks of the same `schema.table` in different catalogs (and suites) apart; the detail table shows `catalog.schema.table`. Regenerate dashboards to pick this up.
 
 ### Documentation
 
-- All configuration examples use canonical check parameters (no deprecated keys, no parameters a check does not accept); the deprecated-keys tables in *Naming conventions* are complete, and the incorrect note saying `trend` keeps `tolerance_pct` was removed.
+- All configuration examples use canonical check parameters (no deprecated keys, no parameters a check does not accept); the deprecated-keys tables in *Naming conventions* are complete, and the incorrect note saying `trend` keeps `tolerance_pct` was removed. `cross_table_equality` / `temporal_consistency` docs no longer advertise unsupported `left_catalog` / `right_catalog` keys.
 
 ---
 

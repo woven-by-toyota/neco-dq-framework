@@ -459,10 +459,11 @@ totals_consistency:
 - `right_schema` / `right_table` / `right_column`: right side of comparison
 - `join_columns`: column, or list of columns, to join on (a list joins on all of them, e.g. `[tenant_id, order_id]`)
 - `tolerance_abs`: acceptable absolute difference (default: 0.0)
-- `left_schema` / `left_table` / `left_catalog` (optional): override the left
-  side; all default to the table under validation (`table_ctx`)
-- `catalog` (optional): shared catalog for both sides (default: current table's
-  catalog); use `left_catalog` / `right_catalog` for a cross-catalog comparison
+- `left_schema` / `left_table` (optional): override the left side; both default
+  to the table under validation (`table_ctx`)
+- `catalog` (optional): catalog for **both** sides (default: current table's
+  catalog). Both tables must live in the same catalog: per-side catalogs are not
+  supported
 
 **Result details (v1.1.0+):**
 - PASS: `"All {n} records match"`
@@ -583,10 +584,11 @@ compare_metric:
 - `left_timestamp_column`: timestamp column on the left (the table under validation)
 - `right_schema` / `right_table` / `right_timestamp_column`: right table and timestamp
 - `join_columns`: column, or list of columns, to join on (a list joins on all of them, e.g. `[tenant_id, order_id]`)
-- `left_schema` / `left_table` / `left_catalog` (optional): override the left
-  side; all default to the table under validation (`table_ctx`)
-- `catalog` (optional): shared catalog for both sides (default: current table's
-  catalog); use `left_catalog` / `right_catalog` for a cross-catalog comparison
+- `left_schema` / `left_table` (optional): override the left side; both default
+  to the table under validation (`table_ctx`)
+- `catalog` (optional): catalog for **both** sides (default: current table's
+  catalog). Both tables must live in the same catalog: per-side catalogs are not
+  supported
 
 **Result details (v1.1.0+):**
 - PASS: `"All {n} records in valid order"`

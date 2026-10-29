@@ -35,7 +35,7 @@ from neco_dq.dashboards.lakeview import (
     iter_dataset_queries,
     load_template,
 )
-from tests.constants import AllureFeature, AllureTag
+from tests.constants import AllureFeature, AllureSeverity, AllureTag
 
 
 def _fake_client(warehouses):
@@ -563,3 +563,73 @@ class TestPrintConfirmation:
         with allure.step("Unknown workspace host yields no URL (not the raw id)"):
             client = SimpleNamespace(config=SimpleNamespace(host=""))
             assert _dashboard_url(client, "01fabc") is None
+
+
+@allure.feature(AllureFeature.CORE)
+@allure.story("Dashboard — regression datasets")
+class TestRegressionDatasetsAcrossCatalogs:
+    """The same schema.table in two catalogs must not merge in regression datasets."""
+
+    @staticmethod
+    def _queries(view: str) -> dict[str, str]:
+        sd = json.loads(
+            _hydrate(
+                history_table="cat.dq.hist",
+                catalog=None,
+                layers={
+                    "bronze": {"catalog": "cat_a", "schemas": ["shared"]},
+                    "silver": {"catalog": "cat_b", "schemas": ["shared"]},
+                },
+                expected_tables=[("cat_a", "shared", "t"), ("cat_b", "shared", "t")],
+            )["serialized_dashboard"]
+        )
+        return {
+            ds["name"]: "".join(ds["queryLines"]).replace("cat.dq.hist", view)
+            for ds in sd["datasets"]
+            if ds["name"] in ("regression_summary", "regression_detail")
+        }
+
+    @pytest.fixture
+    def history_view(self, spark):
+        from datetime import datetime
+
+        r1, r2 = datetime(2026, 1, 1), datetime(2026, 1, 2)
+        rows = [
+            # cat_a: freshness newly broken in the latest run
+            ("silver", "cat_a", "shared", "t", None, "freshness", True, r1),
+            ("silver", "cat_a", "shared", "t", None, "freshness", False, r2),
+            # cat_b: same schema.table and check, passing in both runs
+            ("silver", "cat_b", "shared", "t", None, "freshness", True, r1),
+            ("silver", "cat_b", "shared", "t", None, "freshness", True, r2),
+        ]
+        spark.createDataFrame(
+            rows,
+            "test_suite string, catalog string, schema string, table string, column string, "
+            "check_name string, passed boolean, run_timestamp timestamp",
+        ).createOrReplaceTempView("regression_hist")
+        return "regression_hist"
+
+    @pytest.mark.spark
+    @allure.title("Regression summary counts a new failure hidden by another catalog")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
+    def test_regression_summary_keeps_catalogs_apart(self, spark, history_view):
+        with allure.step("Run the hydrated regression_summary query"):
+            row = spark.sql(self._queries(history_view)["regression_summary"], args={"sel_date": "All"}).first()
+
+        with allure.step("Verify: the cat_a failure is counted"):
+            assert row["newly_broken"] == 1
+            assert row["recovered"] == 0
+
+    @pytest.mark.spark
+    @allure.title("Regression detail lists the newly failing check with its catalog")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
+    def test_regression_detail_keeps_catalogs_apart(self, spark, history_view):
+        with allure.step("Run the hydrated regression_detail query"):
+            rows = spark.sql(self._queries(history_view)["regression_detail"], args={"sel_date": "All"}).collect()
+
+        with allure.step("Verify: one NEW FAILURES row identified by catalog.schema.table"):
+            assert [(r["table"], r["check_name"], r["change_type"]) for r in rows] == [
+                ("cat_a.shared.t", "freshness", "NEW FAILURES")
+            ]

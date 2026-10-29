@@ -95,7 +95,13 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
         silver_join_cols = self._as_column_list(cfg.get("silver_join_columns"))
         name = cfg.get("name")
 
-        if gold_join_cols and silver_join_cols and len(gold_join_cols) != len(silver_join_cols):
+        if bool(gold_join_cols) ^ bool(silver_join_cols):
+            return (
+                False,
+                self._details_config_missing("gold_join_columns and silver_join_columns (both required)"),
+                None,
+            )
+        if len(gold_join_cols) != len(silver_join_cols):
             return False, "Invalid config: gold_join_columns and silver_join_columns must have same length", None
 
         g_df, s_df = df_gold, df_silver
@@ -664,7 +670,7 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
             history_df = (
                 self.spark.table(history_table)
                 .filter(
-                    (f.col("check_name") == cfg.get("name", "volume"))
+                    (f.col("check_name") == (getattr(self, "_current_check_id", None) or cfg.get("name", "volume")))
                     & (f.col("catalog") == table_ctx["catalog"])
                     & (f.col("schema") == table_ctx["schema"])
                     & (f.col("table") == table_ctx["table"])
@@ -1145,7 +1151,7 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
                 window: Number of historical records to consider (default: 7)
                 min_history: Minimum records required for comparison (default: 3)
                 tolerance_percent: Allowed percentage deviation from median (default: 20)
-            name: Check name to lookup in history (required)
+            name: Instance label (required); history is matched on the persisted check ID
             direction: Expected trend direction - "stable", "increasing", "decreasing" (default: stable)
         """
         start_time = datetime.now(UTC)
@@ -1159,7 +1165,9 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
 
         metric_expr = cfg["metric"]
         history_table = history_cfg["table"]
-        check_name = cfg["name"]
+        # History rows are keyed by the persisted check ID (e.g. ``trend`` or
+        # ``trend[name=x]``); ``name`` is the fallback for direct calls.
+        check_name = getattr(self, "_current_check_id", None) or cfg["name"]
         window = int(history_cfg.get("window", 7))
         min_history = int(history_cfg.get("min_history", 3))
         tolerance_pct = float(history_cfg.get("tolerance_percent", 20))

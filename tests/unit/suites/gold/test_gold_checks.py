@@ -572,6 +572,29 @@ class TestGoldReconciliationExpr:
             assert passed is False
             assert "same length" in details
 
+    @allure.title("Reconciliation rejects join columns given on one side only")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
+    def test_reconciliation_join_columns_one_side_only(self, spark, gold_suite):
+        """Without both sides the domain restriction cannot apply: fail instead of comparing all silver."""
+        with allure.step("Setup test data"):
+            df_gold = spark.createDataFrame([(1, 100)], ["id", "amount"])
+            df_silver = spark.createDataFrame([(1, 100), (2, 999)], ["id", "amount"])
+            df_silver.createOrReplaceTempView("test_silver_join_one_side")
+            cfg = {
+                "silver": {"table": "test_silver_join_one_side"},
+                "gold_expr": "SUM(amount)",
+                "silver_expr": "SUM(amount)",
+                "gold_join_columns": ["id"],
+            }
+
+        with allure.step("Execute reconciliation check"):
+            passed, details, _name = gold_suite._check_reconciliation_expr(df_gold, cfg)
+
+        with allure.step("Verify: config error reported"):
+            assert passed is False
+            assert "gold_join_columns and silver_join_columns" in details
+
     @allure.title("Reconciliation with both zero values passes")
     @allure.severity(AllureSeverity.NORMAL)
     @allure.tag(AllureTag.EDGE_CASE, AllureTag.SPARK)
@@ -1154,6 +1177,78 @@ class TestGoldTrend:
         with allure.step("Verify: trend should pass when stable"):
             assert passed is True
             assert "Trend OK" in details
+
+    @allure.title("Trend run finds its own history under the persisted check ID")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)
+    def test_trend_history_lookup_uses_persisted_check_id(self, spark, gold_suite, df_metrics, monkeypatch):
+        """A single trend instance is persisted as ``trend``; the history lookup must use that ID, not ``name``."""
+        with allure.step("Setup history persisted by previous runs"):
+            from datetime import UTC, datetime
+
+            history_data = [
+                ("trend", "test", "test", "metrics", datetime(2026, 1, d, tzinfo=UTC), "metric=4") for d in (1, 2, 3)
+            ]
+            spark.createDataFrame(
+                history_data, ["check_name", "catalog", "schema", "table", "run_timestamp", "details"]
+            ).createOrReplaceTempView("test_history_persisted_trend")
+            monkeypatch.setattr(gold_suite, "_read_table", lambda *_a: df_metrics)
+            table_cfg = {
+                "catalog": "test",
+                "schema": "test",
+                "table": "metrics",
+                "checks": {
+                    "trend": {
+                        "enabled": True,
+                        "metric": "COUNT(*)",
+                        "name": "row_count_trend",
+                        "history": {"table": "test_history_persisted_trend", "min_history": 3},
+                    }
+                },
+            }
+
+        with allure.step("Run the table validation"):
+            result = gold_suite.validate_table(table_cfg)
+
+        with allure.step("Verify: trend compared against history"):
+            trend = next(c for c in result["checks"] if c["check_name"] == "trend")
+            assert "Trend OK" in trend["details"], trend["details"]
+
+    @allure.title("Named volume run finds its own history under the persisted check ID")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)
+    def test_volume_history_lookup_uses_persisted_check_id(self, spark, gold_suite, df_metrics, monkeypatch):
+        """A single named volume instance is persisted as ``volume``; the lookup must not use ``name``."""
+        with allure.step("Setup history persisted by previous runs"):
+            from datetime import UTC, datetime
+
+            history_data = [
+                ("volume", "test", "test", "metrics", datetime(2026, 1, d, tzinfo=UTC), "value=4") for d in (1, 2, 3)
+            ]
+            spark.createDataFrame(
+                history_data, ["check_name", "catalog", "schema", "table", "run_timestamp", "details"]
+            ).createOrReplaceTempView("test_history_persisted_volume")
+            monkeypatch.setattr(gold_suite, "_read_table", lambda *_a: df_metrics)
+            table_cfg = {
+                "catalog": "test",
+                "schema": "test",
+                "table": "metrics",
+                "checks": {
+                    "volume": {
+                        "enabled": True,
+                        "metric": "COUNT(*)",
+                        "name": "orders_volume",
+                        "history": {"table": "test_history_persisted_volume", "min_history": 3},
+                    }
+                },
+            }
+
+        with allure.step("Run the table validation"):
+            result = gold_suite.validate_table(table_cfg)
+
+        with allure.step("Verify: volume compared against the historical baseline"):
+            volume = next(c for c in result["checks"] if c["check_name"] == "volume")
+            assert "baseline" in volume["details"], volume["details"]
 
     @allure.title("Trend fails when deviation exceeds tolerance")
     @allure.severity(AllureSeverity.CRITICAL)

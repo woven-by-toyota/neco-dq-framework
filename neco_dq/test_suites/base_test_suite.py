@@ -1769,12 +1769,16 @@ class DQTestSuite(ABC):
                 self._last_failure_stats = None
                 self._last_investigation_query = None
                 self._last_execution = None
+                # Persisted check_name of this instance; history-based checks look it up.
+                self._current_check_id = check_id
 
                 try:
                     func = getattr(self, f"_check_{name}")
                     passed, details, column = self._dispatch_check(func, name, df, resolved_cfg, table_ctx, fq_table)
                 except Exception as e:
                     passed, details, column = False, str(e), None
+                finally:
+                    self._current_check_id = None
 
                 self._register_check(
                     result,

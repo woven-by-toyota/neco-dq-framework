@@ -586,7 +586,9 @@ coverage:
 - `min_value` (optional): minimum allowed value (stateless bounds mode)
 - `max_value` (optional): maximum allowed value (stateless bounds mode)
 - `group_by` (optional): columns to group by
-- `name` (optional): descriptive name (also used to match history rows)
+- `name` (optional): descriptive name; with several `volume` instances on one
+  table it becomes part of the check ID (`volume[name=<name>]`), which is what
+  history rows are matched on
 - `history` (optional): historical comparison settings
   - `table`: history table location
   - `window`: number of historical records to consider (default: 7)
@@ -792,7 +794,9 @@ completeness:
 
 **Key configuration:**
 - `metric`: SQL expression for the metric (required)
-- `name`: Check name to lookup in history (required)
+- `name`: instance label (required); with several `trend` instances on one table it
+  becomes part of the check ID (`trend[name=<name>]`). History is matched on that
+  persisted check ID
 - `history`: historical comparison settings (required)
   - `table`: table containing historical DQ results (required)
   - `window`: number of historical records to consider (default: 7)
