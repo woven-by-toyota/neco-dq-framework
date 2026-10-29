@@ -2,6 +2,18 @@
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- `dq_policy.unknown_check_params` is now honored in normal `run_dq()` runs: the orchestrator passes `dq_policy` to every suite, so `error` and `ignore` no longer behave as `warn`.
+- With `unknown_check_params: error`, invalid check parameters now fail the run (`CheckConfigError`) instead of being summarized as a suite crash that evaluated to a warning.
+- Resolving deprecated nested keys (`history.tolerance_pct`, `lateness.column`) no longer mutates shared `default_checks`, so every table using them is counted in the deprecation report.
+- Check IDs of multi-instance checks stay as in 1.3.0 for unchanged configs using deprecated keys (e.g. `idempotency[key_column=id]`); IDs are built from the config as written.
+- List-valued join columns now work as documented: `gold_join_columns` / `silver_join_columns` in `reconciliation_expr` (with a length check), and `join_columns` in `cross_table_equality` and `temporal_consistency` join on every listed column.
+
+---
+
 ## [1.4.0] - 2026-10-14
 
 Check-parameter standardization: a single naming convention across every check, with a non-breaking deprecation path for the old keys.

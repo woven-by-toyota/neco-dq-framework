@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from neco_dq.test_suites.base_test_suite import DQTestSuite
+from neco_dq.core.registry.check_param_schema import CheckConfigError
 from neco_dq.core.registry.test_suite_registry import load_test_suite_from_registry
 from neco_dq.core.summary.terminal_logger import DQSummaryTerminalLogger
 from neco_dq.core.policy.dq_failure_policy import DQFailurePolicy
@@ -159,7 +160,7 @@ class DQOrchestrator:
                     continue
 
                 engine_cls = load_test_suite_from_registry(engine_name)
-                engine = engine_cls(spark, {engine_name: engine_cfg})
+                engine = engine_cls(spark, {engine_name: engine_cfg, "dq_policy": self.dq_policy})
 
                 # Set profile context for execution trace (only if profile is active)
                 if self.profile_name and self.profile_name != "default":
@@ -229,6 +230,10 @@ class DQOrchestrator:
                     summary.get("passed", 0),
                     summary.get("failed", 0),
                 )
+
+            except CheckConfigError:
+                logger.exception("Test suite %s has invalid check configuration", name)
+                raise
 
             except Exception as e:
                 logger.exception(f"Test suite {name} crashed: {e}")

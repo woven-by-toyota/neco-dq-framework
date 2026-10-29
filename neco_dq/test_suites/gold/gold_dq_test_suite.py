@@ -91,9 +91,12 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
         gold_filter = cfg.get("gold_filter")
         silver_filter = cfg.get("silver_filter")
         group_by = cfg.get("group_by", [])
-        gold_join_col = cfg.get("gold_join_columns")
-        silver_join_col = cfg.get("silver_join_columns")
+        gold_join_cols = self._as_column_list(cfg.get("gold_join_columns"))
+        silver_join_cols = self._as_column_list(cfg.get("silver_join_columns"))
         name = cfg.get("name")
+
+        if gold_join_cols and silver_join_cols and len(gold_join_cols) != len(silver_join_cols):
+            return False, "Invalid config: gold_join_columns and silver_join_columns must have same length", None
 
         g_df, s_df = df_gold, df_silver
         gold_rows = g_df.count()
@@ -101,16 +104,17 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
         # ------------------------------------------------------------------
         # Optional domain restriction (Gold → Silver)
         # ------------------------------------------------------------------
-        if gold_join_col and silver_join_col:
-            # Extract distinct gold IDs with consistent column name for join
-            gold_ids = g_df.select(f.col(gold_join_col).cast("string").alias("_join_key")).distinct()
+        if gold_join_cols and silver_join_cols:
+            # Distinct gold keys under common names (_join_key_<i>), one per key column
+            key_names = [f"_join_key_{i}" for i in range(len(gold_join_cols))]
+            gold_ids = g_df.select(
+                *[f.col(c).cast("string").alias(k) for c, k in zip(gold_join_cols, key_names, strict=True)]
+            ).distinct()
 
-            # Cast silver column and join on the common key
-            s_df = (
-                s_df.withColumn("_join_key", f.col(silver_join_col).cast("string"))
-                .join(gold_ids, "_join_key", "inner")
-                .drop("_join_key")
-            )
+            # Cast silver key columns and join on all common keys
+            for c, k in zip(silver_join_cols, key_names, strict=True):
+                s_df = s_df.withColumn(k, f.col(c).cast("string"))
+            s_df = s_df.join(gold_ids, key_names, "inner").drop(*key_names)
 
         # ------------------------------------------------------------------
         # Optional filters

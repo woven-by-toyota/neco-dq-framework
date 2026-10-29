@@ -34,6 +34,7 @@ aliases; the resolver already tolerates callables for forward compatibility.
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Callable
 from typing import Any
 
@@ -567,8 +568,16 @@ def _set_nested(cfg: dict, dotted: str, value: Any) -> None:
     cur[parts[-1]] = value
 
 
+class CheckConfigError(ValueError):
+    """Invalid check parameters under ``unknown_check_params: error``.
+
+    Raised at config validation time; fatal for the whole run (not a check
+    failure), so the orchestrator re-raises it instead of summarizing a crash.
+    """
+
+
 def resolve_aliases(suite: str, check_name: str, cfg: dict) -> tuple[dict, list[dict[str, str]]]:
-    """Return a cfg copy with deprecated keys renamed, plus deprecation records.
+    """Return a deep cfg copy with deprecated keys renamed, plus deprecation records.
 
     Each deprecation record is ``{"check", "old", "new"}``. If the canonical
     key is already present, the deprecated key is dropped (canonical wins) and
@@ -578,7 +587,7 @@ def resolve_aliases(suite: str, check_name: str, cfg: dict) -> tuple[dict, list[
     if entry is None or not entry.get("aliases"):
         return cfg, []
 
-    new_cfg = dict(cfg)
+    new_cfg = copy.deepcopy(cfg)
     deprecations: list[dict[str, str]] = []
     for old, target in entry["aliases"].items():
         present, value = _get_nested(new_cfg, old)

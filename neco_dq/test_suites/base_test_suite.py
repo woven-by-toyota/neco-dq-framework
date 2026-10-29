@@ -9,6 +9,7 @@ from datetime import datetime, UTC
 from typing import Any
 
 from neco_dq.core.registry.check_param_schema import (
+    CheckConfigError,
     allowed_keys,
     forbidden_keys_present,
     resolve_aliases,
@@ -205,6 +206,13 @@ class DQTestSuite(ABC):
             return [cfg]
         raise ValueError(f"Invalid check configuration type: {type(cfg)}")
 
+    @staticmethod
+    def _as_column_list(value: str | list[str] | None) -> list[str]:
+        """Normalize a ``*_columns`` value (one column name or a list) to a list."""
+        if not value:
+            return []
+        return [value] if isinstance(value, str) else list(value)
+
     @property
     def _unknown_check_params_mode(self) -> str:
         """Strictness for unknown/forbidden check params (``dq_policy``, §7).
@@ -237,7 +245,7 @@ class DQTestSuite(ABC):
           strictness setting (§7): ``warn`` logs and continues, ``error``
           raises, ``ignore`` is silent.
 
-        Returns the resolved config (a shallow copy when aliases applied).
+        Returns the resolved config (an independent copy when aliases applied).
         """
         resolved, deprecations = resolve_aliases(self._suite_name, check_name, cfg)
 
@@ -269,7 +277,7 @@ class DQTestSuite(ABC):
             return resolved
 
         if mode == "error":
-            raise ValueError(f"[{self._suite_name}] check '{check_name}': " + "; ".join(problems))
+            raise CheckConfigError(f"[{self._suite_name}] check '{check_name}': " + "; ".join(problems))
 
         for problem in problems:
             logger.warning("[%s] check '%s': %s", self._suite_name, check_name, problem)
@@ -1731,7 +1739,8 @@ class DQTestSuite(ABC):
 
                 severity = self._severity(resolved_cfg)
                 blocking = self._blocking(resolved_cfg)
-                check_id = self._build_check_instance_name(name, resolved_cfg, idx, single_instance)
+                # Identity from the as-written cfg: keeps check IDs stable for legacy keys.
+                check_id = self._build_check_instance_name(name, cfg, idx, single_instance)
 
                 self._last_failure_stats = None
                 self._last_investigation_query = None

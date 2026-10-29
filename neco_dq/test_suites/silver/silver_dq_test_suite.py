@@ -3,9 +3,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from datetime import UTC, datetime
+from functools import reduce
+from operator import and_
 from typing import Any
 
-from pyspark.sql import SparkSession, Window
+from pyspark.sql import Column, SparkSession, Window
 from pyspark.sql.functions import col, abs as sql_abs, sum as sql_sum, count as sql_count
 from pyspark.sql import functions as f
 
@@ -528,6 +530,11 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
 
         return passed, details, cfg["header_amount_column"]
 
+    def _join_on(self, join_columns: str | list[str]) -> Column:
+        """Equality join condition between aliases ``l`` and ``r`` on every join column."""
+        conditions = [col(f"l.{c}") == col(f"r.{c}") for c in self._as_column_list(join_columns)]
+        return reduce(and_, conditions)
+
     def _check_cross_table_equality(self, cfg: dict, table_ctx: dict) -> tuple[bool, str, str | None]:
         """
         Verify column values match between two tables after joining.
@@ -556,9 +563,7 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
         left = self.spark.table(left_fq)
         right = self.spark.table(right_fq)
 
-        joined = left.alias("l").join(
-            right.alias("r"), col(f"l.{cfg['join_columns']}") == col(f"r.{cfg['join_columns']}"), "inner"
-        )
+        joined = left.alias("l").join(right.alias("r"), self._join_on(cfg["join_columns"]), "inner")
         total_joined = joined.count()
 
         mismatches = joined.filter(
@@ -651,9 +656,7 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
         left = self.spark.table(left_fq)
         right = self.spark.table(right_fq)
 
-        joined = left.alias("l").join(
-            right.alias("r"), col(f"l.{cfg['join_columns']}") == col(f"r.{cfg['join_columns']}"), "inner"
-        )
+        joined = left.alias("l").join(right.alias("r"), self._join_on(cfg["join_columns"]), "inner")
         total_joined = joined.count()
 
         violations = joined.filter(col(f"l.{cfg['left_timestamp_column']}") > col(f"r.{cfg['right_timestamp_column']}"))

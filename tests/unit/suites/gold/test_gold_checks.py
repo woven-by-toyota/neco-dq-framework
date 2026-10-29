@@ -520,6 +520,58 @@ class TestGoldReconciliationExpr:
             assert passed is True
             assert "Reconciliation OK" in details
 
+    @allure.title("Reconciliation restricts silver to gold domain on composite join columns")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)
+    def test_reconciliation_with_composite_join_columns(self, spark, gold_suite):
+        """List-valued gold/silver join columns restrict silver on all keys together."""
+        with allure.step("Setup test data"):
+            # (A, 2) exists in silver only: excluded by (tenant, id), not by id alone.
+            gold_data = [("A", 1, 100), ("B", 2, 200)]
+            silver_data = [("A", 1, 100), ("B", 2, 200), ("A", 2, 999)]
+            df_gold = spark.createDataFrame(gold_data, ["tenant", "id", "amount"])
+            df_silver = spark.createDataFrame(silver_data, ["tenant_code", "item_id", "amount"])
+            df_silver.createOrReplaceTempView("test_silver_composite_join")
+            cfg = {
+                "silver": {"table": "test_silver_composite_join"},
+                "gold_expr": "SUM(amount)",
+                "silver_expr": "SUM(amount)",
+                "gold_join_columns": ["tenant", "id"],
+                "silver_join_columns": ["tenant_code", "item_id"],
+                "tolerance_percent": 1.0,
+            }
+
+        with allure.step("Execute reconciliation check"):
+            passed, details, _name = gold_suite._check_reconciliation_expr(df_gold, cfg)
+
+        with allure.step("Verify: silver restricted on both keys"):
+            assert passed is True
+            assert "Reconciliation OK" in details
+
+    @allure.title("Reconciliation rejects join columns of different length")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
+    def test_reconciliation_join_columns_length_mismatch(self, spark, gold_suite):
+        """gold_join_columns and silver_join_columns must pair up one to one."""
+        with allure.step("Setup test data"):
+            df_gold = spark.createDataFrame([("A", 1, 100)], ["tenant", "id", "amount"])
+            df_silver = spark.createDataFrame([("A", 1, 100)], ["tenant", "id", "amount"])
+            df_silver.createOrReplaceTempView("test_silver_join_len")
+            cfg = {
+                "silver": {"table": "test_silver_join_len"},
+                "gold_expr": "SUM(amount)",
+                "silver_expr": "SUM(amount)",
+                "gold_join_columns": ["tenant", "id"],
+                "silver_join_columns": ["id"],
+            }
+
+        with allure.step("Execute reconciliation check"):
+            passed, details, _name = gold_suite._check_reconciliation_expr(df_gold, cfg)
+
+        with allure.step("Verify: config error reported"):
+            assert passed is False
+            assert "same length" in details
+
     @allure.title("Reconciliation with both zero values passes")
     @allure.severity(AllureSeverity.NORMAL)
     @allure.tag(AllureTag.EDGE_CASE, AllureTag.SPARK)
