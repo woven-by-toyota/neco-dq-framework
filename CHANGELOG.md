@@ -16,6 +16,11 @@ Fixes from the review of the 1.4.0 check-parameter standardization.
 - `flow_completeness` with list-valued `join_columns` no longer crashes when reporting missing records (failure stats listed the key list as a single nested item).
 - Gold `coverage` accepts a single join column given as a string (`gold_join_columns: id`); it was split into characters.
 - Investigation queries of the join-based silver checks (`totals_consistency`, `cross_table_equality`, `temporal_consistency`, `flow_completeness`) are now fully rendered, with one join condition per key column; previously they returned the raw template with unresolved placeholders.
+- Profiling suggestions are valid configs for the checks they target: `_reason` / `_confidence` / `_comment` annotations are no longer reported as unknown parameters (they failed the run under `unknown_check_params: error`); the `trend` suggestion now uses the `name` + `history: {table, window, tolerance_percent}` shape; bronze `table_freshness` and `record_count_anomaly` suggestions use `max_staleness_days` and `max_deviation_percent`.
+
+### Documentation
+
+- All configuration examples use canonical check parameters (no deprecated keys, no parameters a check does not accept); the deprecated-keys tables in *Naming conventions* are complete, and the incorrect note saying `trend` keeps `tolerance_pct` was removed.
 
 ---
 

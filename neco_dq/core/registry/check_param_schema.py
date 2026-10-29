@@ -616,12 +616,14 @@ def resolve_aliases(suite: str, check_name: str, cfg: dict) -> tuple[dict, list[
 def unknown_keys(suite: str, check_name: str, cfg: dict) -> list[str]:
     """Return top-level cfg keys not understood by the check (post-alias).
 
-    Empty when the check is not in the schema (validation skipped).
+    Empty when the check is not in the schema (validation skipped). Keys
+    starting with ``_`` are annotations (e.g. ``_reason`` / ``_confidence`` in
+    profiling suggestions), not parameters, and are never reported.
     """
     allowed = allowed_keys(suite, check_name)
     if allowed is None:
         return []
-    return sorted(k for k in cfg if k not in allowed)
+    return sorted(k for k in cfg if k not in allowed and not str(k).startswith("_"))
 
 
 def forbidden_keys_present(suite: str, check_name: str, cfg: dict) -> list[str]:

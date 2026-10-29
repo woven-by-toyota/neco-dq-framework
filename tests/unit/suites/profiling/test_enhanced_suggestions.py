@@ -98,14 +98,25 @@ class TestTrendSuggestion:
         with allure.step("Execute: suggest trend checks"):
             result = profiling_suite._suggest_trend_checks(date_cols=["event_date"], column_stats=column_stats)
 
-        with allure.step("Verify: result has correct structure, date_column, metric_column, and low confidence"):
+        with allure.step("Verify: result has the trend check shape and low confidence"):
             assert result is not None
             assert result["enabled"] is False
-            assert result["date_column"] == "event_date"
-            assert result["metric_column"] == "revenue"
-            assert "_confidence" in result
+            assert result["metric"] == "SUM(revenue)"
+            assert result["name"] == "revenue_trend"
+            assert result["history"] == {
+                "table": "<catalog.schema.dq_history_table>",
+                "window": 7,
+                "tolerance_percent": 30,
+            }
             assert result["_confidence"] == "low"
-            assert "_reason" in result
+            assert "event_date" in result["_reason"]
+
+        with allure.step("Verify: suggestion is a valid trend config (required keys, no unknown keys)"):
+            from neco_dq.core.registry.check_param_schema import get_check_schema, unknown_keys
+
+            assert unknown_keys("gold", "trend", result) == []
+            for key in get_check_schema("gold", "trend")["required"]:
+                assert key in result
 
     @allure.title("trend returns None when date_cols is empty")
     @allure.severity(AllureSeverity.NORMAL)

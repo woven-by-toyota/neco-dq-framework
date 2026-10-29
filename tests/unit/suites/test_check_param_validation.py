@@ -296,3 +296,22 @@ def test_check_ids_unchanged_for_legacy_multi_instance_config(spark, monkeypatch
     names = {c["check_name"] for c in result["checks"]}
     assert "idempotency[key_column=id]" in names
     assert "idempotency[key_column=id,code]" in names
+
+
+# --------------------------------------------------------------------------
+# Underscore-prefixed metadata keys (profiling suggestions) are not params
+# --------------------------------------------------------------------------
+
+
+def test_underscore_metadata_keys_not_flagged(caplog):
+    suite = _SilverStub()
+    cfg = {"key_columns": ["id"], "_confidence": "high", "_reason": "PK detected", "_comment": "review"}
+    with caplog.at_level(logging.WARNING, logger="neco_dq"):
+        suite._resolve_and_validate_cfg("idempotency", cfg)
+    assert caplog.records == []
+
+
+def test_underscore_metadata_keys_allowed_in_error_mode():
+    suite = _SilverStub({"dq_policy": {"unknown_check_params": "error"}})
+    resolved = suite._resolve_and_validate_cfg("idempotency", {"key_columns": ["id"], "_reason": "PK detected"})
+    assert resolved["_reason"] == "PK detected"

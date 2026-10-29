@@ -96,7 +96,7 @@ class SuiteSuggestionsMixin:
         # table_freshness: verify table freshness using Delta metadata
         bronze_checks["table_freshness"] = {
             "enabled": True,
-            "max_days_stale": 2,
+            "max_staleness_days": 2,
             "severity": "warning",
         }
 
@@ -105,7 +105,7 @@ class SuiteSuggestionsMixin:
         bronze_checks["record_count_anomaly"] = {
             "enabled": False,
             "history_table": "<catalog.schema.dq_history_table>",
-            "allowed_deviation_percent": 40,
+            "max_deviation_percent": 40,
             "severity": "warning",
             "_comment": "Enable and set history_table to detect record count anomalies",
         }
@@ -527,12 +527,13 @@ class SuiteSuggestionsMixin:
         date_col = date_cols[0]
         return {
             "enabled": False,
-            "date_column": date_col,
-            "metric_column": metric_col,
+            "name": f"{metric_col}_trend",
             "metric": f"SUM({metric_col})",
-            "granularity": "day",
-            "lookback_periods": 7,
-            "tolerance_pct": 30,
+            "history": {
+                "table": "<catalog.schema.dq_history_table>",
+                "window": 7,
+                "tolerance_percent": 30,
+            },
             "severity": "warning",
             "_confidence": "low",
             "_reason": f"Date column ({date_col}) + numeric column ({metric_col}) detected",
