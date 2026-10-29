@@ -75,9 +75,10 @@ silver:
         referential_integrity:
           enabled: true
           source_column: order_id
-          target_schema: my_schema_silver
-          target_table: orders
-          target_column: order_id
+          target:
+            schema: my_schema_silver
+            table: orders
+            column: order_id
 ```
 
 Add `gold:` and `great_expectations:` keys the same way. Each check's parameters

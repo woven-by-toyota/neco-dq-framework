@@ -101,17 +101,18 @@ are listed here so existing configs can be migrated.
 | `totals_consistency` | `join_key`, `catalog`, `tolerance` | `join_columns`, `detail_catalog`, `tolerance_abs` |
 | `cross_table_equality` | `join_key`, `tolerance` | `join_columns`, `tolerance_abs` |
 | `temporal_consistency`, `row_temporal_consistency` | `join_key`, `left_timestamp`, `right_timestamp` | `join_columns`, `left_timestamp_column`, `right_timestamp_column` |
-| `flow_completeness` | `join_key`, `tolerance_pct` | `join_columns`, `tolerance_percent` |
-| `referential_integrity` | `catalog`, `schema`, `table` | `source_catalog`, `source_schema`, `source_table` |
+| `flow_completeness` | `join_key`, `tolerance_pct`, `lateness.column` | `join_columns`, `tolerance_percent`, `lateness.timestamp_column` |
+| `referential_integrity` | `catalog`, `schema`, `table`, `target_catalog` / `target_schema` / `target_table` / `target_column`, `min_valid_ratio` | `source_catalog`, `source_schema`, `source_table`, `target: {catalog, schema, table, column}`, `min_valid_percent` (0–100) |
 
 ### Gold
 
 | Check | Deprecated key | Canonical key |
 |-------|----------------|---------------|
-| `reconciliation_expr` | `gold`, `silver`, `tolerance` | `gold_expr`, `silver_expr`, `tolerance_percent` |
-| `coverage` | `tolerance_pct`, `join_keys`, `gold_join_keys`, `silver_join_keys` | `tolerance_percent`, `join_columns`, `gold_join_columns`, `silver_join_columns` |
+| `reconciliation_expr` | `gold`, `silver` (expression), `tolerance`, `source_silver`, `filter: {gold, silver}`, `join_filter: {gold_column, silver_column}` | `gold_expr`, `silver_expr`, `tolerance_percent`, `silver: {catalog, schema, table}`, `gold_filter` / `silver_filter`, `gold_join_columns` / `silver_join_columns` |
+| `coverage` | `tolerance_pct`, `join_keys`, `gold_join_keys`, `silver_join_keys`, `silver_table` | `tolerance_percent`, `join_columns`, `gold_join_columns`, `silver_join_columns`, `silver: {catalog, schema, table}` |
 | `volume` | `min`, `max`, `history.tolerance_pct` | `min_value`, `max_value`, `history.tolerance_percent` |
 | `cross_gold` | `tolerance` | `tolerance_abs` |
+| `trend` | `history_table`, `window`, `min_history`, `tolerance_pct` | `history: {table, window, min_history, tolerance_percent}` |
 
 !!! note "Shape changes beyond renaming"
     A few parameters changed *shape*, not just name; their migration is handled
@@ -121,10 +122,6 @@ are listed here so existing configs can be migrated.
     block while `min_valid_ratio` (0–1) becomes `min_valid_percent` (0–100). The
     per-check pages under [Test Suites & Checks](../test-suites/index.md) show the
     current shape.
-
-!!! warning "`trend` keeps `tolerance_pct`"
-    The gold `trend` check still uses `tolerance_pct` as its canonical key; it is
-    not deprecated. Do not rename it to `tolerance_percent`.
 
 ---
 

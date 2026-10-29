@@ -170,7 +170,7 @@ bronze:
 
         table_freshness:
           enabled: true
-          max_days_stale: 2
+          max_staleness_days: 2
           severity: warning
 ```
 
@@ -203,13 +203,13 @@ silver:
         # With a Unity Catalog PK it would be enabled: true + blocking: true.
         idempotency:
           enabled: false
-          key_column: transaction_id
+          key_columns: [transaction_id]
           severity: error
           _reason: "Candidate key (from approximate profiling). Review, then enable."
 
         freshness:
           enabled: true
-          column: created_at
+          timestamp_column: created_at
           max_delay_hours: 72
           severity: warning
 
@@ -268,12 +268,12 @@ gold:
           metric: "COUNT(*)"
           history:
             table: "<catalog.schema.dq_history_table>"
-            tolerance_pct: 50
+            tolerance_percent: 50
           severity: warning
 
         freshness:
           enabled: true
-          column: run_timestamp
+          timestamp_column: run_timestamp
           max_delay_hours: 24
           severity: warning
 ```
@@ -534,7 +534,7 @@ ALTER TABLE catalog.schema.table ADD CONSTRAINT pk_name PRIMARY KEY (col1, col2)
 
 When a PK constraint is defined:
 - The PK columns are used as the definitive unique columns
-- `idempotency` check uses the PK as `key_column`
+- `idempotency` check uses the PK as `key_columns`
 - Other detected unique columns are still included but PK takes priority
 
 The PK constraint also decides whether uniqueness checks are enabled. A primary key

@@ -125,7 +125,7 @@ default_checks:
     enabled: true
     severity: warning
     blocking: false
-    max_days_stale: 2
+    max_staleness_days: 2
 ```
 
 **ingestion.yaml**:

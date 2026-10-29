@@ -34,7 +34,7 @@ silver:
           severity: critical
           blocking: true
           tags: [critical, daily]
-          key_column: order_id
+          key_columns: [order_id]
 
         freshness:
           enabled: true
@@ -100,8 +100,8 @@ silver:
           severity: warning
           blocking: false
           tags: [daily, smoke]
-          date_column: created_at
-          max_age_hours: 24
+          timestamp_column: created_at
+          max_delay_hours: 24
 
         record_count:
           enabled: true

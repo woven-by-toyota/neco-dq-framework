@@ -376,7 +376,6 @@ profiles:
     variables:
       schema_prefix: dev_
       max_delay_hours: 72
-      min_record_count: 1
     policy:
       failure_threshold: 0.5
       block_test_suites:
@@ -388,7 +387,6 @@ profiles:
     variables:
       schema_prefix: stg_
       max_delay_hours: 48
-      min_record_count: 100
 
   prod:
     extends: base
@@ -396,7 +394,6 @@ profiles:
     variables:
       schema_prefix: ""
       max_delay_hours: 24
-      min_record_count: 1000
     policy:
       failure_threshold: 0.05
 ```
@@ -439,8 +436,7 @@ tables:
         max_delay_hours: "{{ var.max_delay_hours }}"
 
       record_count:
-        enabled: true
-        min_rows: "{{ var.min_record_count }}"
+        enabled: true   # fails only when the table is empty
 ```
 
 ### Usage
@@ -507,8 +503,6 @@ prod:
   variables:
     # Production SLA: data must be fresh within 24 hours
     max_delay_hours: 24
-    # Production requires at least 1000 rows to catch ingestion failures
-    min_record_count: 1000
 ```
 
 ### 5. Set Sensible Defaults in `default_profile`

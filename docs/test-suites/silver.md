@@ -130,7 +130,7 @@ checks support it:
 | `business_rules` | yes (shared check) |
 | `json_schema` | yes (shared check) |
 | `distinct_count` | no (binary pass/fail) |
-| `referential_integrity` | no (uses `min_valid_ratio`) |
+| `referential_integrity` | no (uses `min_valid_percent`) |
 | `totals_consistency` | no (uses `tolerance_abs`) |
 | `cross_table_equality` | no (uses `tolerance_abs`) |
 | `temporal_consistency` | no (binary pass/fail) |
@@ -303,11 +303,11 @@ status_transition:
 
 **Key configuration:**
 - `source_column`: FK column in the table under validation (required)
-- `target_schema` / `target_table` / `target_column`: target table and PK column
+- `target`: target table and PK column, as a nested block with `schema`, `table`, `column` (and optional `catalog`)
 - `source_schema` / `source_table` / `source_catalog` (optional): override the
   source table; all default to the table under validation (`table_ctx`), so you
   normally omit them
-- `min_valid_ratio` (optional): minimum acceptable match ratio (default: 1.0)
+- `min_valid_percent` (optional): minimum percent (0–100) of valid references (default: 100)
 
 **Result details:** `valid_ratio=<ratio>; min_ratio=<ratio>`
 
@@ -325,9 +325,10 @@ referential_integrity:
   blocking: true
   # source defaults to the table under validation; only the FK column is needed
   source_column: product_id
-  target_schema: my_schema_gold
-  target_table: products
-  target_column: product_id
+  target:
+    schema: my_schema_gold
+    table: products
+    column: product_id
 ```
 
 **Example Output:**
@@ -1018,9 +1019,10 @@ silver:
           severity: critical
           blocking: true
           source_column: product_id
-          target_schema: my_schema_gold
-          target_table: products
-          target_column: product_id
+          target:
+            schema: my_schema_gold
+            table: products
+            column: product_id
 
         row_temporal_consistency:
           enabled: true
