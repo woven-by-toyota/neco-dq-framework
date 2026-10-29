@@ -859,7 +859,7 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
         if not passed and total_missing > 0:
             failure_stats = self._build_failure_stats(
                 failure_type="incomplete_flow",
-                affected_columns=[cfg["join_columns"]],
+                affected_columns=self._as_column_list(cfg["join_columns"]),
                 failure_count=total_missing,
                 total_checked=total_src,
                 diagnostic={
@@ -878,7 +878,7 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
                 investigation_query = self._build_investigation_query(
                     check_type="incomplete_flow_lateness",
                     table_fq=src_fq,
-                    affected_columns=[cfg["join_columns"]],
+                    affected_columns=self._as_column_list(cfg["join_columns"]),
                     cfg={
                         "source_table": src_fq,
                         "target_table": trg_fq,
@@ -893,7 +893,7 @@ class SparkSilverDQTestSuite(DQTestSuite, SharedChecksMixin):
                 investigation_query = self._build_investigation_query(
                     check_type="incomplete_flow",
                     table_fq=src_fq,
-                    affected_columns=[cfg["join_columns"]],
+                    affected_columns=self._as_column_list(cfg["join_columns"]),
                     cfg={
                         "source_table": src_fq,
                         "target_table": trg_fq,

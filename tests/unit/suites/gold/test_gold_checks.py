@@ -765,6 +765,29 @@ class TestGoldCoverage:
             assert "Coverage OK" in details or ("All" in details and "keys within" in details)
             assert column == "group_id"
 
+    @allure.title("Keyed coverage accepts a single join column given as a string")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.EDGE_CASE, AllureTag.SPARK)
+    def test_coverage_keyed_scalar_join_columns(self, spark, gold_suite, df_coverage_gold, df_coverage_silver):
+        """``join_columns: group_id`` behaves like ``[group_id]``, not like ['g', 'r', ...]."""
+        with allure.step("Setup test data"):
+            df_coverage_silver.createOrReplaceTempView("test_coverage_silver_scalar_key")
+            cfg = {
+                "silver": {"table": "test_coverage_silver_scalar_key"},
+                "gold_expr": "SUM(amount)",
+                "silver_expr": "SUM(total)",
+                "gold_join_columns": "group_id",
+                "silver_join_columns": "group_id",
+                "tolerance_percent": 1.0,
+            }
+
+        with allure.step("Execute coverage check"):
+            passed, details, column = gold_suite._check_coverage(df_coverage_gold, cfg)
+
+        with allure.step("Verify: keyed coverage should pass on group_id"):
+            assert passed is True, details
+            assert column == "group_id"
+
     @allure.title("Coverage with silver filter")
     @allure.severity(AllureSeverity.NORMAL)
     @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)

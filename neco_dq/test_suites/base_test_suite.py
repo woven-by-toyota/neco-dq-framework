@@ -926,20 +926,20 @@ class DQTestSuite(ABC):
             "totals_mismatch": {
                 "description": "Find header/detail total mismatches",
                 "template": (
-                    "SELECT h.{join_key}, h.{header_amount} as header_total, "
+                    "SELECT {h_join_keys}, h.{header_amount} as header_total, "
                     "COALESCE(d.detail_sum, 0) as detail_sum, "
                     "h.{header_amount} - COALESCE(d.detail_sum, 0) as difference "
                     "FROM {table} h LEFT JOIN (SELECT {join_key}, SUM({detail_amount}) as detail_sum "
-                    "FROM {detail_table} GROUP BY {join_key}) d ON h.{join_key} = d.{join_key} "
+                    "FROM {detail_table} GROUP BY {join_key}) d ON {join_on_h_d} "
                     "WHERE ABS(h.{header_amount} - COALESCE(d.detail_sum, 0)) > {tolerance} LIMIT 100"
                 ),
             },
             "cross_table_mismatch": {
                 "description": "Find rows with different values between tables",
                 "template": (
-                    "SELECT l.{join_key}, l.{left_column} as left_value, r.{right_column} as right_value, "
+                    "SELECT {l_join_keys}, l.{left_column} as left_value, r.{right_column} as right_value, "
                     "l.{left_column} - r.{right_column} as difference "
-                    "FROM {left_table} l JOIN {right_table} r ON l.{join_key} = r.{join_key} "
+                    "FROM {left_table} l JOIN {right_table} r ON {join_on_l_r} "
                     "WHERE ABS(l.{left_column} - r.{right_column}) > {tolerance} "
                     "ORDER BY ABS(difference) DESC LIMIT 100"
                 ),
@@ -947,9 +947,9 @@ class DQTestSuite(ABC):
             "temporal_violation": {
                 "description": "Find rows violating timestamp order between tables",
                 "template": (
-                    "SELECT l.{join_key}, l.{left_timestamp} as left_ts, r.{right_timestamp} as right_ts, "
+                    "SELECT {l_join_keys}, l.{left_timestamp} as left_ts, r.{right_timestamp} as right_ts, "
                     "DATEDIFF(MINUTE, r.{right_timestamp}, l.{left_timestamp}) as minutes_diff "
-                    "FROM {left_table} l JOIN {right_table} r ON l.{join_key} = r.{join_key} "
+                    "FROM {left_table} l JOIN {right_table} r ON {join_on_l_r} "
                     "WHERE l.{left_timestamp} > r.{right_timestamp} "
                     "ORDER BY minutes_diff DESC LIMIT 100"
                 ),
@@ -968,9 +968,9 @@ class DQTestSuite(ABC):
                 "description": "Find source records missing in target (flow completeness)",
                 "template": (
                     "SELECT src.* FROM {source_table} src "
-                    "LEFT JOIN {target_table} tgt ON src.{join_key} = tgt.{join_key} "
-                    "WHERE tgt.{join_key} IS NULL {source_filter} "
-                    "ORDER BY src.{join_key} LIMIT 100"
+                    "LEFT JOIN {target_table} tgt ON {join_on_src_tgt} "
+                    "WHERE {tgt_first_join_key} IS NULL {source_filter} "
+                    "ORDER BY {src_join_keys} LIMIT 100"
                 ),
             },
             "incomplete_flow_lateness": {
@@ -981,8 +981,8 @@ class DQTestSuite(ABC):
                     "CASE WHEN DATEDIFF(MINUTE, src.{lateness_column}, current_timestamp()) <= {max_delay_minutes} "
                     "THEN 'late' ELSE 'lost' END as status "
                     "FROM {source_table} src "
-                    "LEFT JOIN {target_table} tgt ON src.{join_key} = tgt.{join_key} "
-                    "WHERE tgt.{join_key} IS NULL {source_filter} "
+                    "LEFT JOIN {target_table} tgt ON {join_on_src_tgt} "
+                    "WHERE {tgt_first_join_key} IS NULL {source_filter} "
                     "ORDER BY delay_minutes DESC LIMIT 100"
                 ),
             },
@@ -1031,6 +1031,21 @@ class DQTestSuite(ABC):
             "operator",
             "rule_expression",
             "schema",
+            # Cross-table templates (totals, cross-table, temporal, flow)
+            "header_amount",
+            "detail_amount",
+            "detail_table",
+            "left_column",
+            "right_column",
+            "left_table",
+            "right_table",
+            "left_timestamp",
+            "right_timestamp",
+            "source_table",
+            "source_filter",
+            "lateness_column",
+            "max_delay_minutes",
+            "tolerance",
         ]:
             if key in cfg:
                 val = cfg[key]
@@ -1038,6 +1053,15 @@ class DQTestSuite(ABC):
                     parameters[key] = ", ".join(str(v) for v in val)
                 else:
                     parameters[key] = val
+
+        # Join keys (one column or a list) rendered per table alias pair
+        join_keys = self._as_column_list(cfg.get("join_key"))
+        if join_keys:
+            parameters["join_key"] = ", ".join(join_keys)
+            for left, right in (("h", "d"), ("l", "r"), ("src", "tgt")):
+                parameters[f"{left}_join_keys"] = ", ".join(f"{left}.{k}" for k in join_keys)
+                parameters[f"join_on_{left}_{right}"] = " AND ".join(f"{left}.{k} = {right}.{k}" for k in join_keys)
+            parameters["tgt_first_join_key"] = f"tgt.{join_keys[0]}"
 
         # Format template with available parameters to produce final query
         try:

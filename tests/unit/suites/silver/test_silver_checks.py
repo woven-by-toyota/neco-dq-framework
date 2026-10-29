@@ -498,13 +498,17 @@ class TestSilverTemporalConsistency:
 
 
 class _TableStub:
-    """Resolves ``spark.table(fq_name)`` to in-memory DataFrames by name."""
+    """Resolves ``spark.table(fq_name)`` to in-memory DataFrames; delegates the rest."""
 
-    def __init__(self, tables: dict):
+    def __init__(self, spark, tables: dict):
+        self._spark = spark
         self._tables = tables
 
     def table(self, fq_name: str):
         return self._tables[fq_name]
+
+    def __getattr__(self, name):
+        return getattr(self._spark, name)
 
 
 @allure.feature(AllureFeature.SILVER_SUITE)
@@ -523,7 +527,7 @@ class TestSilverCompositeJoinColumns:
             [("A", 1, 10.0, "2026-01-01 11:00:00"), ("B", 1, 20.0, "2026-01-01 09:00:00")],
             ["tenant", "id", "amount", "processed_at"],
         )
-        stub = _TableStub({"c.s.left": left, "c.s.right": right})
+        stub = _TableStub(spark, {"c.s.left": left, "c.s.right": right})
         monkeypatch.setattr(silver_suite, "spark", stub)
         return {"catalog": "c", "schema": "s", "table": "left"}
 
@@ -548,6 +552,29 @@ class TestSilverCompositeJoinColumns:
         with allure.step("Verify: 2 joined rows, all matching"):
             assert passed is True, details
             assert "2" in details
+
+    @pytest.mark.spark
+    @allure.title("Flow completeness reports missing records on composite join columns")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
+    def test_flow_completeness_composite_join_columns(self, spark, silver_suite, monkeypatch):
+        """(B, 1) is missing in target; failure stats list each key column."""
+        with allure.step("Setup source and target tables"):
+            src = spark.createDataFrame([("A", 1), ("B", 1)], ["tenant", "id"])
+            trg = spark.createDataFrame([("A", 1)], ["tenant", "id"])
+            monkeypatch.setattr(silver_suite, "spark", _TableStub(spark, {"c.s.src": src, "c.s.trg": trg}))
+            cfg = {"source_schema": "s", "source_table": "src", "join_columns": ["tenant", "id"]}
+
+        with allure.step("Execute flow completeness"):
+            passed, _details, _column = silver_suite._check_flow_completeness(
+                cfg, {"catalog": "c", "schema": "s", "table": "trg"}
+            )
+
+        with allure.step("Verify: 1 missing record, flat affected columns, rendered query"):
+            assert passed is False
+            assert silver_suite._last_failure_stats["failure_count"] == 1
+            assert silver_suite._last_failure_stats["affected_columns"] == ["tenant", "id"]
+            assert "ON src.tenant = tgt.tenant AND src.id = tgt.id" in (silver_suite._last_investigation_query["query"])
 
     @pytest.mark.spark
     @allure.title("Temporal consistency joins on all composite join columns")

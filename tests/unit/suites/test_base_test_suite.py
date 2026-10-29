@@ -1251,6 +1251,138 @@ class TestBuildInvestigationQuery:
             assert "SELECT *" in result["query"]
             assert "LIMIT 100" in result["query"]
 
+    @allure.title("Investigation query for cross_table_mismatch is fully rendered")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.POSITIVE)
+    def test_investigation_query_cross_table_rendered(self, base_suite):
+        """Join-based templates must not leak unresolved placeholders."""
+        with allure.step("Execute build investigation query"):
+            result = base_suite._build_investigation_query(
+                check_type="cross_table_mismatch",
+                table_fq="c.s.left",
+                affected_columns=["amount"],
+                cfg={
+                    "join_key": "id",
+                    "left_column": "amount",
+                    "right_column": "amount",
+                    "left_table": "c.s.left",
+                    "right_table": "c.s.right",
+                    "tolerance": 0.0,
+                },
+            )
+
+        with allure.step("Verify: placeholders resolved"):
+            query = result["query"]
+            assert "{" not in query
+            assert "FROM c.s.left l JOIN c.s.right r ON l.id = r.id" in query
+            assert "> 0.0" in query
+
+    @allure.title("Investigation query for cross_table_mismatch joins on composite keys")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.POSITIVE)
+    def test_investigation_query_cross_table_composite(self, base_suite):
+        """A list-valued join key renders one equality per key column."""
+        with allure.step("Execute build investigation query"):
+            result = base_suite._build_investigation_query(
+                check_type="cross_table_mismatch",
+                table_fq="c.s.left",
+                affected_columns=["amount"],
+                cfg={
+                    "join_key": ["tenant", "id"],
+                    "left_column": "amount",
+                    "right_column": "amount",
+                    "left_table": "c.s.left",
+                    "right_table": "c.s.right",
+                    "tolerance": 0.0,
+                },
+            )
+
+        with allure.step("Verify: composite join rendered"):
+            query = result["query"]
+            assert "{" not in query
+            assert query.startswith("SELECT l.tenant, l.id, ")
+            assert "ON l.tenant = r.tenant AND l.id = r.id" in query
+
+    @allure.title("Investigation query for temporal_violation joins on composite keys")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.POSITIVE)
+    def test_investigation_query_temporal_composite(self, base_suite):
+        """Temporal template renders timestamps, tables and composite join."""
+        with allure.step("Execute build investigation query"):
+            result = base_suite._build_investigation_query(
+                check_type="temporal_violation",
+                table_fq="c.s.left",
+                affected_columns=["created_at"],
+                cfg={
+                    "join_key": ["tenant", "id"],
+                    "left_timestamp": "created_at",
+                    "right_timestamp": "processed_at",
+                    "left_table": "c.s.left",
+                    "right_table": "c.s.right",
+                },
+            )
+
+        with allure.step("Verify: fully rendered"):
+            query = result["query"]
+            assert "{" not in query
+            assert "ON l.tenant = r.tenant AND l.id = r.id" in query
+            assert "WHERE l.created_at > r.processed_at" in query
+
+    @allure.title("Investigation query for totals_mismatch joins on composite keys")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.POSITIVE)
+    def test_investigation_query_totals_composite(self, base_suite):
+        """Totals template groups and joins detail on every key column."""
+        with allure.step("Execute build investigation query"):
+            result = base_suite._build_investigation_query(
+                check_type="totals_mismatch",
+                table_fq="c.s.header",
+                affected_columns=["total"],
+                cfg={
+                    "join_key": ["tenant", "order_id"],
+                    "header_amount": "total",
+                    "detail_amount": "line_amount",
+                    "detail_table": "c.s.detail",
+                    "tolerance": 0.01,
+                },
+            )
+
+        with allure.step("Verify: fully rendered"):
+            query = result["query"]
+            assert "{" not in query
+            assert "GROUP BY tenant, order_id) d ON h.tenant = d.tenant AND h.order_id = d.order_id" in query
+            assert "FROM c.s.header h" in query
+
+    @allure.title("Investigation query for incomplete_flow joins on composite keys")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.POSITIVE)
+    def test_investigation_query_flow_composite(self, base_suite):
+        """Flow templates anti-join source to target on every key column."""
+        with allure.step("Execute build investigation query"):
+            cfg = {
+                "source_table": "c.s.src",
+                "target_table": "c.s.tgt",
+                "join_key": ["tenant", "id"],
+                "source_filter": "",
+            }
+            plain = base_suite._build_investigation_query(
+                check_type="incomplete_flow", table_fq="c.s.src", affected_columns=["tenant", "id"], cfg=cfg
+            )
+            late = base_suite._build_investigation_query(
+                check_type="incomplete_flow_lateness",
+                table_fq="c.s.src",
+                affected_columns=["tenant", "id"],
+                cfg={**cfg, "lateness_column": "event_ts", "max_delay_minutes": 60},
+            )
+
+        with allure.step("Verify: both fully rendered"):
+            for query in (plain["query"], late["query"]):
+                assert "{" not in query
+                assert "LEFT JOIN c.s.tgt tgt ON src.tenant = tgt.tenant AND src.id = tgt.id" in query
+                assert "WHERE tgt.tenant IS NULL" in query
+            assert "ORDER BY src.tenant, src.id" in plain["query"]
+            assert "<= 60" in late["query"]
+
     @allure.title("SECURITY: Investigation query has no embedded data")
     @allure.severity(AllureSeverity.CRITICAL)
     @allure.tag(AllureTag.NEGATIVE)

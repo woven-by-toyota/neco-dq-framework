@@ -458,8 +458,8 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
         # Resolve join keys
         # ------------------------------------------------------------------
         join_keys = cfg.get("join_columns")
-        gold_keys = cfg.get("gold_join_columns", join_keys)
-        silver_keys = cfg.get("silver_join_columns", join_keys)
+        gold_keys = self._as_column_list(cfg.get("gold_join_columns", join_keys))
+        silver_keys = self._as_column_list(cfg.get("silver_join_columns", join_keys))
 
         if bool(gold_keys) ^ bool(silver_keys):
             return (
