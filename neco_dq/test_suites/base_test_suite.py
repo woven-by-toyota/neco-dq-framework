@@ -967,9 +967,9 @@ class DQTestSuite(ABC):
             "incomplete_flow": {
                 "description": "Find source records missing in target (flow completeness)",
                 "template": (
-                    "SELECT src.* FROM {source_table} src "
+                    "SELECT src.* FROM (SELECT * FROM {source_table} WHERE 1=1 {source_filter}) src "
                     "LEFT JOIN {target_table} tgt ON {join_on_src_tgt} "
-                    "WHERE {tgt_first_join_key} IS NULL {source_filter} "
+                    "WHERE {tgt_first_join_key} IS NULL "
                     "ORDER BY {src_join_keys} LIMIT 100"
                 ),
             },
@@ -980,9 +980,9 @@ class DQTestSuite(ABC):
                     "DATEDIFF(MINUTE, src.{lateness_column}, current_timestamp()) as delay_minutes, "
                     "CASE WHEN DATEDIFF(MINUTE, src.{lateness_column}, current_timestamp()) <= {max_delay_minutes} "
                     "THEN 'late' ELSE 'lost' END as status "
-                    "FROM {source_table} src "
+                    "FROM (SELECT * FROM {source_table} WHERE 1=1 {source_filter}) src "
                     "LEFT JOIN {target_table} tgt ON {join_on_src_tgt} "
-                    "WHERE {tgt_first_join_key} IS NULL {source_filter} "
+                    "WHERE {tgt_first_join_key} IS NULL "
                     "ORDER BY delay_minutes DESC LIMIT 100"
                 ),
             },

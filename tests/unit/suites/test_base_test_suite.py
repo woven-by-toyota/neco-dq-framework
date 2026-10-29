@@ -1383,6 +1383,33 @@ class TestBuildInvestigationQuery:
             assert "ORDER BY src.tenant, src.id" in plain["query"]
             assert "<= 60" in late["query"]
 
+    @allure.title("Investigation query for incomplete_flow scopes source_filter to the source")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.EDGE_CASE)
+    def test_investigation_query_flow_source_filter_unambiguous(self, base_suite):
+        """A source_filter on a join column must apply to source rows only, before the join."""
+        with allure.step("Execute build investigation query for both flow templates"):
+            cfg = {
+                "source_table": "c.s.src",
+                "target_table": "c.s.tgt",
+                "join_key": "id",
+                "source_filter": "AND id > 0",
+            }
+            queries = [
+                base_suite._build_investigation_query(
+                    check_type=t, table_fq="c.s.src", affected_columns=["id"], cfg={**cfg, **extra}
+                )["query"]
+                for t, extra in (
+                    ("incomplete_flow", {}),
+                    ("incomplete_flow_lateness", {"lateness_column": "event_ts", "max_delay_minutes": 60}),
+                )
+            ]
+
+        with allure.step("Verify: filter inside the source subquery, not after the join"):
+            for query in queries:
+                assert "FROM (SELECT * FROM c.s.src WHERE 1=1 AND id > 0) src" in query
+                assert "IS NULL AND id > 0" not in query
+
     @allure.title("SECURITY: Investigation query has no embedded data")
     @allure.severity(AllureSeverity.CRITICAL)
     @allure.tag(AllureTag.NEGATIVE)

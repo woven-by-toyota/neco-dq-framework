@@ -1079,6 +1079,36 @@ class TestGoldCrossGold:
             assert passed is True
             assert "Cross-gold OK" in details or ("All" in details and "within tolerance" in details)
 
+    @allure.title("Cross-gold with implicit left side uses the filtered table")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)
+    def test_cross_gold_implicit_left_uses_filtered_df(self, spark, gold_suite, monkeypatch):
+        """Without left_table, the df already filtered by row/partition filters is the left side."""
+        with allure.step("Setup: full table total 100, filtered df total 10, right total 10"):
+            full = spark.createDataFrame([(1, 10), (2, 90)], ["id", "amount"])
+            filtered = full.filter("id = 1")
+            right = spark.createDataFrame([(1, 10)], ["id", "total"])
+            tables = {"cat.sch.tbl": full, "cat.sch.right": right}
+            real = gold_suite.spark
+
+            class _Spark:
+                def table(self, name):
+                    return tables[name] if name in tables else real.table(name)
+
+                def __getattr__(self, name):
+                    return getattr(real, name)
+
+            monkeypatch.setattr(gold_suite, "spark", _Spark())
+            cfg = {"right_table": "cat.sch.right", "left_expr": "SUM(amount)", "right_expr": "SUM(total)"}
+
+        with allure.step("Execute cross-gold check"):
+            passed, details, _column = gold_suite._check_cross_gold(
+                filtered, cfg, {"catalog": "cat", "schema": "sch", "table": "tbl"}
+            )
+
+        with allure.step("Verify: filtered left (10) matches right (10)"):
+            assert passed is True, details
+
     @allure.title("Cross-gold fails when config missing")
     @allure.severity(AllureSeverity.NORMAL)
     @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
@@ -1249,6 +1279,36 @@ class TestGoldTrend:
         with allure.step("Verify: volume compared against the historical baseline"):
             volume = next(c for c in result["checks"] if c["check_name"] == "volume")
             assert "baseline" in volume["details"], volume["details"]
+
+    @allure.title("Volume history round-trip: baseline is read from real volume results")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
+    def test_volume_history_round_trip_detects_drop(self, spark, gold_suite):
+        """History rows hold what volume itself emits; a large drop against them must fail."""
+        with allure.step("Persist three real volume results of a 100-row table"):
+            from datetime import UTC, datetime
+
+            ctx = {"catalog": "test", "schema": "test", "table": "rt"}
+            df_big = spark.range(100)
+            emitted = [gold_suite._check_volume(df_big, {"metric": "COUNT(*)"}, ctx)[1] for _ in range(3)]
+            history = [
+                ("volume", "test", "test", "rt", datetime(2026, 1, d, tzinfo=UTC), det)
+                for d, det in zip((1, 2, 3), emitted, strict=True)
+            ]
+            spark.createDataFrame(
+                history, ["check_name", "catalog", "schema", "table", "run_timestamp", "details"]
+            ).createOrReplaceTempView("test_history_volume_rt")
+
+        with allure.step("Run volume with history on a 4-row table"):
+            cfg = {"metric": "COUNT(*)", "history": {"table": "test_history_volume_rt", "min_history": 3}}
+            passed, details, _column = gold_suite._check_volume(spark.range(4), cfg, ctx)
+
+        with allure.step("Verify: the 96% drop fails against the baseline of 100"):
+            assert passed is False, details
+            assert "exceeds" in details
+
+        with allure.step("Verify: the failure message still carries the current value for later runs"):
+            assert gold_suite._extract_metric_from_details(details) == 4
 
     @allure.title("Trend fails when deviation exceeds tolerance")
     @allure.severity(AllureSeverity.CRITICAL)

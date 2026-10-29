@@ -4,6 +4,7 @@
 
 import contextlib
 import re
+import statistics
 from datetime import UTC, datetime
 from typing import Any
 
@@ -683,14 +684,14 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
             min_hist = history_cfg.get("min_history", 3)
 
             if hist_cnt >= min_hist:
-                baseline = history_df.selectExpr(
-                    """
-                        percentile_approx(
-                        try_cast(regexp_extract(details, 'value=([0-9.]+)', 1) AS DOUBLE),
-                        0.5
-                        ) AS baseline
-                        """
-                ).first()[0]
+                # Parse values with the same extractor as trend: history rows hold what
+                # this check emits ("Volume OK: 123", "Volume 123 deviation ...").
+                hist_values = [
+                    v
+                    for row in history_df.select("details").collect()
+                    if (v := self._extract_metric_from_details(row["details"] or "")) is not None
+                ]
+                baseline = statistics.median(hist_values) if hist_values else None
 
                 if baseline and baseline > 0:
                     tol = history_cfg.get("tolerance_percent", 10)
@@ -730,7 +731,8 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
                     if passed:
                         details = f"Volume OK: {current_value} (within {tol}% of baseline {baseline})"
                     else:
-                        details = self._details_fail_deviation("Historical", deviation, tol)
+                        # Keep the current value in the message: later runs read it back as history.
+                        details = self._details_fail_deviation(f"Volume {current_value}", deviation, tol)
 
                     self._last_failure_stats = failure_stats
                     self._last_investigation_query = investigation_query
@@ -819,7 +821,7 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
 
     def _check_cross_gold(
         self,
-        df: DataFrame,  # noqa: ARG002 - 'df' required so dispatch passes table_ctx (3-arg signature)
+        df: DataFrame,
         cfg: dict[str, Any],
         table_ctx: dict[str, str],
     ) -> tuple[bool, str, str | None]:
@@ -848,7 +850,8 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
         default_left = f"{table_ctx['catalog']}.{table_ctx['schema']}.{table_ctx['table']}"
         left_table = cfg.get("left_table", default_left)
         right_table = cfg["right_table"]
-        df_left = self.spark.table(left_table)
+        # Implicit left side = the table under validation, already row/partition filtered.
+        df_left = self.spark.table(left_table) if "left_table" in cfg else df
         df_right = self.spark.table(right_table)
 
         # Apply optional filters
