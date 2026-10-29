@@ -138,6 +138,14 @@ are listed here so existing configs can be migrated.
 Migrate on your own schedule before the next major: switch each config to the
 canonical keys and confirm the deprecation report comes back empty.
 
+!!! note "Check IDs of multi-instance checks"
+    When a check has several instances, each result gets an ID built from the
+    config **as written**, e.g. `idempotency[key_column=id]`. Upgrading without
+    touching the config keeps the IDs you already have in history and
+    dashboards. Renaming a key during migration (`key_column` → `key_columns`)
+    changes the ID to `idempotency[key_columns=id]`, so history for that
+    instance starts over under the new name.
+
 ---
 
 ## Unknown parameters
@@ -154,7 +162,7 @@ dq_policy:
 | Mode | Effect |
 |------|--------|
 | `warn` *(default)* | Log a warning naming the unknown key (and suggesting the closest valid key, e.g. *did you mean 'key_columns'?*); the key is left in the config and the check still runs. |
-| `error` | Raise a `ValueError` and fail the run; useful in CI to catch typos before they ship. |
+| `error` | Raise a `CheckConfigError` (a `ValueError`) and fail the whole run, even if other suites succeeded; useful in CI to catch typos before they ship. |
 | `ignore` | Accept unknown keys silently: no warning, no error. |
 
 An invalid value for `unknown_check_params` falls back to `warn`. Checks that are

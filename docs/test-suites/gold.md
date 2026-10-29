@@ -355,6 +355,8 @@ compare_metric:
 - `gold_expr`: SQL expression to aggregate Gold data
 - `silver_expr`: SQL expression to aggregate Silver data
 - `group_by` (optional): columns to group by for reconciliation
+- `gold_join_columns` / `silver_join_columns` (optional): restrict Silver to the
+  keys present in Gold; one column or a list, paired by position (same length)
 - `tolerance_percent`: acceptable percentage difference (default: 1.0)
 - `name` (optional): descriptive name
 
@@ -512,10 +514,10 @@ uniqueness:
 
 **Key configuration:**
 - `gold_expr`: SQL expression to aggregate Gold data
-- `gold_join_columns`: columns to join Gold data
+- `gold_join_columns`: column, or list of columns, to join Gold data
 - `silver_expr`: SQL expression to aggregate Silver data
 - `silver_table`: fully qualified Silver table name
-- `silver_join_columns`: columns to join Silver data
+- `silver_join_columns`: column, or list of columns, to join Silver data (paired by position with `gold_join_columns`)
 - `tolerance_percent`: acceptable coverage gap (default: 1.0%)
 - `name` (optional): descriptive name
 

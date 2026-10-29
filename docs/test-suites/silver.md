@@ -406,7 +406,7 @@ cardinality:
 - Allows configurable tolerance for floating-point differences
 
 **Key configuration:**
-- `join_columns`: key to join header and detail tables
+- `join_columns`: column, or list of columns, to join header and detail tables
 - `detail_schema` / `detail_table`: detail table location
 - `detail_amount_column`: column to aggregate in detail table
 - `header_amount_column`: column in header table to compare against
@@ -456,7 +456,7 @@ totals_consistency:
 **Key configuration:**
 - `left_column`: column on the left side (the table under validation)
 - `right_schema` / `right_table` / `right_column`: right side of comparison
-- `join_columns`: column to join on
+- `join_columns`: column, or list of columns, to join on (a list joins on all of them, e.g. `[tenant_id, order_id]`)
 - `tolerance_abs`: acceptable absolute difference (default: 0.0)
 - `left_schema` / `left_table` / `left_catalog` (optional): override the left
   side; all default to the table under validation (`table_ctx`)
@@ -581,7 +581,7 @@ compare_metric:
 **Key configuration:**
 - `left_timestamp_column`: timestamp column on the left (the table under validation)
 - `right_schema` / `right_table` / `right_timestamp_column`: right table and timestamp
-- `join_columns`: column to join on
+- `join_columns`: column, or list of columns, to join on (a list joins on all of them, e.g. `[tenant_id, order_id]`)
 - `left_schema` / `left_table` / `left_catalog` (optional): override the left
   side; all default to the table under validation (`table_ctx`)
 - `catalog` (optional): shared catalog for both sides (default: current table's
@@ -689,7 +689,7 @@ row_temporal_consistency:
 
 **Key configuration:**
 - `source_schema` / `source_table`: upstream table
-- `join_columns`: column to join on
+- `join_columns`: column, or list of columns, to join on (a list joins on all of them, e.g. `[tenant_id, order_id]`)
 - `source_filter` (optional): SQL filter for source records
 
 **Result details (v1.1.0+):**
