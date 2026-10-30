@@ -214,12 +214,11 @@ ruff format --check .
 
 ### Test Standards
 
-#### Allure Decorators (Optional, internal)
+#### Allure Decorators (Optional)
 
 ```python
 @allure.feature(AllureFeature.EXPECTED_RESOLVERS)
 @allure.story(AllureStory.STATIC_RESOLVER)
-@allure.id("7064") # From Allure TestOps
 @allure.title("Static resolver returns configured value")
 @allure.severity(AllureSeverity.CRITICAL)
 @allure.tag(AllureTag.POSITIVE)
@@ -227,7 +226,7 @@ def test_static_returns_value(self):
     ...
 ```
 
-#### Gherkin Steps (Optional, internal)
+#### Gherkin Steps (Optional)
 
 ```python
 def test_example(self):

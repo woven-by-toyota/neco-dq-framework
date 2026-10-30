@@ -1218,7 +1218,7 @@ silver:
     - `test_orchestrator.py`: 13 tests (9 unit + 4 integration placeholders)
     - `test_runner.py`: 7 tests (integration placeholders)
 
-- **Allure TestOps integration**:
+- **Allure test conventions**:
   - Gherkin steps format (Given/When/Then)
   - Tags: lowercase (`positive`, `negative`, `spark`)
   - Name format: `Feature > Story > Title`
