@@ -12,6 +12,7 @@ from pyspark.sql.types import BinaryType
 
 from neco_dq.test_suites.base_test_suite import DQTestSuite
 from neco_dq.test_suites.shared_checks import BusinessRulesCheckMixin, JsonSchemaCheckMixin
+from neco_dq.test_suites.shared_checks.freshness_check import as_utc_datetime
 from neco_dq.core.io.result_writer import DQResultWriter
 
 
@@ -227,9 +228,8 @@ class SparkBronzeDQTestSuite(DQTestSuite, JsonSchemaCheckMixin, BusinessRulesChe
             self._last_execution = execution
             return False, self._details_no_data(f"column '{ts_col}'"), ts_col
 
-        # Spark timestamps are timezone-naive (UTC by contract); normalize for Python arithmetic
-        if latest.tzinfo is None:
-            latest = latest.replace(tzinfo=UTC)
+        # TIMESTAMP max is naive (UTC by contract), DATE max is a date: same normalization
+        latest = as_utc_datetime(latest)
 
         now = datetime.now(UTC)
         delta_hours = (now - latest).total_seconds() / 3600

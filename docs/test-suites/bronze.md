@@ -262,7 +262,7 @@ record_count_anomaly:
 - Fails if the delay exceeds the allowed threshold
 
 **Key configuration:**
-- `timestamp_column`: column containing timestamps
+- `timestamp_column`: column containing timestamps (`TIMESTAMP` or `DATE`; a date is read as midnight UTC of that day)
 - `max_delay_hours` (default: 24)
 
 **Typical use:**

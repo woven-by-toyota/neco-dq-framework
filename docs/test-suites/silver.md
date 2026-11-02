@@ -926,7 +926,7 @@ business_rules:
 - Fails if the delay exceeds the allowed threshold
 
 **Key configuration:**
-- `timestamp_column`: timestamp column to check (required)
+- `timestamp_column`: timestamp column to check (required; `TIMESTAMP` or `DATE`, a date is read as midnight UTC of that day)
 - `max_delay_hours`: maximum acceptable delay (default: 24)
 
 **Result details:** `latest=<timestamp>; age_h=<hours>; max_delay_h=<threshold>`

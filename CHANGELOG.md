@@ -2,12 +2,13 @@
 
 ---
 
-## [1.4.1] - 2026-10-29
+## [1.4.1] - 2026-11-02
 
 Fixes from the review of the 1.4.0 check-parameter standardization.
 
 ### Fixed
 
+- `freshness` works on `DATE` columns (all suites). Spark returns a DATE max as a Python `date`, which has no `tzinfo`, so the check failed with `'datetime.date' object has no attribute 'tzinfo'` instead of measuring anything. A date is now read as midnight UTC of that day.
 - `dq_policy.unknown_check_params` is now honored in normal `run_dq()` runs: the orchestrator passes `dq_policy` to every suite, so `error` and `ignore` no longer behave as `warn`.
 - With `unknown_check_params: error`, invalid check parameters now fail the run (`CheckConfigError`) instead of being summarized as a suite crash that evaluated to a warning.
 - Resolving deprecated nested keys (`history.tolerance_pct`, `lateness.column`) no longer mutates shared `default_checks`, so every table using them is counted in the deprecation report.

@@ -656,7 +656,7 @@ volume:
 - Fails if delay exceeds threshold
 
 **Key configuration:**
-- `timestamp_column`: timestamp column to check
+- `timestamp_column`: timestamp column to check (`TIMESTAMP` or `DATE`; a date is read as midnight UTC of that day)
 - `max_delay_hours`: maximum acceptable delay (default: 24)
 
 **Result details:** `latest=<timestamp>; delay_hours=<hours>`

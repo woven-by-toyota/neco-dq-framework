@@ -4,12 +4,27 @@
 
 """Freshness check mixin (Silver/Gold shared variant)."""
 
-from datetime import datetime, UTC
+from datetime import date, datetime, time, UTC
 from typing import Any
 
 from pyspark.sql import functions as f
 
 from neco_dq.test_suites.shared_checks.where_clause import WhereClauseMixin
+
+
+def as_utc_datetime(value: date | datetime) -> datetime:
+    """Normalize the max of a freshness column to an aware UTC ``datetime``.
+
+    Spark returns a TIMESTAMP max as a naive ``datetime`` (UTC by contract) and a
+    DATE max as a ``date``, which has no ``tzinfo`` and cannot be subtracted from a
+    ``datetime``. A date is read as the start of that day, midnight UTC: a table
+    stamped today is between 0 and 24 hours old.
+    """
+    if not isinstance(value, datetime):
+        return datetime.combine(value, time.min, tzinfo=UTC)
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 class FreshnessCheckMixin(WhereClauseMixin):
@@ -44,15 +59,8 @@ class FreshnessCheckMixin(WhereClauseMixin):
             self._last_execution = execution
             return False, self._details_no_data(f"column '{column}'"), column
 
-        # Handle naive timestamps by assuming UTC
-        # This is a common pattern in data lakes where timestamps are stored without timezone
-        if latest.tzinfo is None:
-            latest = latest.replace(tzinfo=UTC)
-
+        latest = as_utc_datetime(latest)
         now_utc = datetime.now(UTC)
-        # Convert latest to UTC if it has a different timezone
-        if latest.tzinfo != UTC:
-            latest = latest.astimezone(UTC)
 
         age_h = (now_utc - latest).total_seconds() / 3600
         passed = age_h <= max_delay

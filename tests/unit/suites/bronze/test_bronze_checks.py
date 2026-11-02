@@ -155,6 +155,44 @@ class TestBronzeFreshness:
             assert "No data in column" in details
             assert column == "updated_at"
 
+    @allure.title("Freshness reads a DATE column as midnight UTC")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)
+    def test_freshness_date_column_today_passes(self, bronze_suite, spark):
+        """A DATE max comes back as datetime.date, which has no tzinfo."""
+        with allure.step("Setup test data"):
+            from datetime import UTC, datetime as dt
+
+            today = dt.now(UTC).date()
+            df = spark.createDataFrame([(1, today)], "id INT, event_date DATE")
+            cfg = {"timestamp_column": "event_date", "max_delay_hours": 24}
+
+        with allure.step("Execute freshness check"):
+            passed, details, column = bronze_suite._check_freshness(df, cfg)
+
+        with allure.step("Verify: today's date is fresh"):
+            assert passed is True, details
+            assert column == "event_date"
+            assert "within 24h limit" in details
+
+    @allure.title("Freshness fails a stale DATE column")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
+    def test_freshness_date_column_stale_fails(self, bronze_suite, spark):
+        with allure.step("Setup test data"):
+            from datetime import UTC, datetime as dt, timedelta
+
+            stale = dt.now(UTC).date() - timedelta(days=10)
+            df = spark.createDataFrame([(1, stale)], "id INT, event_date DATE")
+            cfg = {"timestamp_column": "event_date", "max_delay_hours": 48}
+
+        with allure.step("Execute freshness check"):
+            passed, details, _ = bronze_suite._check_freshness(df, cfg)
+
+        with allure.step("Verify: stale date fails on age, not on an exception"):
+            assert passed is False
+            assert "exceeds 48h limit" in details
+
 
 @allure.feature(AllureFeature.BRONZE_SUITE)
 @allure.story(AllureStory.SCHEMA_DRIFT)
