@@ -13,7 +13,7 @@ for the authoritative setup):
 ```bash
 # Clone the repository
 git clone https://github.com/woven-by-toyota/neco-dq-framework.git
-cd qa-nexus-dq-framework
+cd neco-dq-framework
 
 # Create the environment with all dev dependencies (includes PySpark)
 uv sync --extra dev --frozen

@@ -112,7 +112,7 @@ For local development (running the test suite, contributing), clone the repo and
 
 ```bash
 git clone https://github.com/woven-by-toyota/neco-dq-framework.git
-cd qa-nexus-dq-framework
+cd neco-dq-framework
 uv sync --extra dev --frozen
 ```
 

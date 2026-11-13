@@ -10,7 +10,7 @@ Requires [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python p
 
 ```bash
 git clone https://github.com/woven-by-toyota/neco-dq-framework.git
-cd qa-nexus-dq-framework
+cd neco-dq-framework
 uv sync --extra dev --frozen
 pre-commit install
 ```
