@@ -179,6 +179,9 @@ class SparkBronzeDQTestSuite(DQTestSuite, JsonSchemaCheckMixin, BusinessRulesChe
 
             if passed:
                 details = f"Record count OK: {current} (deviation {deviation_pct:.1f}% within {allowed_dev}% limit)"
+            elif prev == 0:
+                # Any growth from 0 fails, but a percentage of 0 is undefined
+                details = f"Count went from 0 to {current} (no previous rows to compare against)"
             else:
                 details = self._details_fail_deviation("Count", deviation_pct, allowed_dev)
 

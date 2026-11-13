@@ -23,6 +23,9 @@ Fixes from the review of the 1.4.0 check-parameter standardization.
 - `cross_gold` without `left_table` uses the table under validation as already filtered by `row_filter` / `partition_filter`, instead of reloading the whole table.
 - `flow_completeness` investigation queries apply `source_filter` inside a source-only subquery, so filters on join columns are no longer ambiguous.
 - `reconciliation_expr` rejects `gold_join_columns` without `silver_join_columns` (or vice versa) instead of silently comparing against all Silver rows.
+- Great Expectations converts to pandas only the columns its expectations read (column keys, `column_list`, names used in `row_condition`, and the columns of `integrity`, `no_duplicate` and `multicolumn_sum`). Before, the whole table was converted, so a timestamp past 2262-04-11 (the pandas `datetime64[ns]` limit, e.g. a `2999-12-31` "no end date" sentinel) in any column crashed the table as `engine_crash` and none of its expectations ran. A far-future timestamp in a column that is checked still crashes the table.
+- Great Expectations `engine_crash` rows are written with their `run_timestamp` and a `run_id` instead of NULL and `"None"`, so dashboards that pick the latest run by `run_timestamp` show the crash. Their `details` is a plain message (`Check error: ...`) like other rows. `data_filter` rows now carry the same `run_id` as the expectation rows of their table.
+- `record_count_anomaly` reports `Count went from 0 to N (no previous rows to compare against)` when the previous count was 0, instead of `Count deviation 0.0% exceeds ...% limit`. The check still fails.
 - Lakeview dashboard: the regression datasets (`regression_summary`, `regression_detail`) keep checks of the same `schema.table` in different catalogs (and suites) apart; the detail table shows `catalog.schema.table`. Regenerate dashboards to pick this up.
 
 ### Documentation

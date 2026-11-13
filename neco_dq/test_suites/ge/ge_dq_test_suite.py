@@ -4,13 +4,16 @@
 
 import logging
 import os
+import re
 from datetime import datetime, UTC
 from typing import Any
 
 import great_expectations as gx
 from great_expectations.core.run_identifier import RunIdentifier
+import pandas as pd
 from great_expectations.data_context.types.base import ProgressBarsConfig
-from pyspark.sql import SparkSession
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql.functions import col
 
 from neco_dq.test_suites.base_test_suite import DQTestSuite
 from neco_dq.core.io.result_writer import DQResultWriter
@@ -216,6 +219,69 @@ class GEDQTestSuite(DQTestSuite):
 
         return filtered
 
+    # ------------------------------------------------------------------
+    # Spark -> pandas conversion
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _referenced_columns(schema_def: dict[str, Any]) -> set[str]:
+        """
+        Collect every column the expectations read.
+
+        Includes column-level keys, ``column_list`` on column rules, identifiers in
+        ``row_condition``, and columns named in dataset rules (integrity pairs,
+        no_duplicate, multicolumn_sum).
+        """
+        columns: set[str] = set()
+
+        for key, rules in schema_def.items():
+            if key == "_dataset" or not isinstance(rules, dict):
+                continue
+            columns.add(key)
+            for rule_cfg in rules.values():
+                if not isinstance(rule_cfg, dict):
+                    continue
+                columns.update(rule_cfg.get("column_list") or [])
+                row_condition = rule_cfg.get("row_condition")
+                if row_condition:
+                    # Over-collecting is harmless: names are intersected with the table columns
+                    columns.update(a or b for a, b in re.findall(r"`([^`]+)`|([A-Za-z_]\w*)", row_condition))
+
+        dataset = schema_def.get("_dataset") or {}
+        for pair_rules in (dataset.get("integrity") or {}).values():
+            for rule in pair_rules or []:
+                columns.update(c for c in (rule.get("column_A"), rule.get("column_B")) if c)
+        columns.update((dataset.get("no_duplicate") or {}).get("column_list") or [])
+        for rule in dataset.get("multicolumn_sum") or []:
+            columns.update(rule.get("column_list") or [])
+
+        return columns
+
+    def _to_pandas(self, df: DataFrame, schema_def: dict[str, Any]) -> pd.DataFrame:
+        """
+        Convert only the columns the expectations read.
+
+        pandas stores timestamps as datetime64[ns], which cannot go past 2262-04-11, so
+        converting every column lets one far-future value in an unchecked column crash
+        the whole table.
+
+        Columns configured but absent from the table are left out of the select, so GE
+        still reports them through expect_column_to_exist.
+        """
+        referenced = self._referenced_columns(schema_def)
+        keep = [c for c in df.columns if c in referenced]
+
+        if not keep:
+            # Only table-level rules (min_rows/max_rows): they need the row count, not the values
+            return pd.DataFrame(index=pd.RangeIndex(df.count()))
+
+        return df.select(*[col(f"`{c.replace('`', '``')}`") for c in keep]).toPandas()
+
+    @staticmethod
+    def _build_run_id(table_fq: str, run_ts: datetime) -> RunIdentifier:
+        """Run identifier shared by every row of one table run (expectations, data_filter, engine_crash)."""
+        return RunIdentifier(run_name=f"run_{table_fq}_{run_ts.strftime('%Y%m%d_%H%M%S')}", run_time=run_ts)
+
     def _setup_ge_context(self, table: str):
         """
         Set up GE ephemeral context with datasource, asset, and batch definition.
@@ -321,6 +387,9 @@ class GEDQTestSuite(DQTestSuite):
         # Load Spark DataFrame and apply filters before toPandas()
         df = self.spark.table(table_fq)
         df, filter_results, rows_after, where_clause = self._apply_filters(df, table_cfg, table_fq, run_ts)
+        run_id = self._build_run_id(table_fq, run_ts)
+        for r in filter_results:
+            r["run_id"] = run_id
 
         # Skip GE validation if no rows after filtering (rows_after == -1 means no filters applied)
         if rows_after == 0:
@@ -328,17 +397,13 @@ class GEDQTestSuite(DQTestSuite):
             return filter_results
 
         # Convert filtered Spark DataFrame to Pandas for GE
-        pdf = df.toPandas()
+        pdf = self._to_pandas(df, schema_def)
 
         # Set up GE context and validation
         context, batch_def = self._setup_ge_context(table)
         checkpoint = self._setup_validation(context, batch_def, table_cfg, schema_def)
 
         # Run checkpoint
-        run_id = RunIdentifier(
-            run_name=f"run_{table_fq}_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}",
-            run_time=datetime.now(UTC),
-        )
         result = checkpoint.run(batch_parameters={"dataframe": pdf}, run_id=run_id)
         validation_result = result.run_results[next(iter(result.run_results.keys()))]
 
@@ -370,6 +435,7 @@ class GEDQTestSuite(DQTestSuite):
                 table_results = self.validate_table(table_cfg)
             except Exception as e:
                 table_fq = f"{table_cfg.get('catalog')}.{table_cfg.get('schema')}.{table_cfg.get('table')}"
+                crash_ts = datetime.now(UTC)
                 table_results = [
                     {
                         "test_suite": "great_expectations",
@@ -377,7 +443,8 @@ class GEDQTestSuite(DQTestSuite):
                         "schema": table_cfg.get("schema"),
                         "table": table_fq,
                         "table_fullname": table_fq,
-                        "run_timestamp": datetime.now(UTC),
+                        "run_ts": crash_ts,
+                        "run_id": self._build_run_id(table_fq, crash_ts),
                         "passed": False,
                         "check_name": "engine_crash",
                         "severity": "error",
@@ -385,7 +452,7 @@ class GEDQTestSuite(DQTestSuite):
                         "record_count": 0,
                         "failed_count": 0,
                         "blocking": False,
-                        "details": {"error_message": str(e)},
+                        "details": self._details_error(str(e)),
                     }
                 ]
 
@@ -394,7 +461,7 @@ class GEDQTestSuite(DQTestSuite):
             # Build canonical rows for writer
             for r in table_results:
                 run_id_obj = r.get("run_id")
-                run_id = getattr(run_id_obj, "run_name", str(run_id_obj))
+                run_id = getattr(run_id_obj, "run_name", run_id_obj)
                 check_id = f"{table_cfg['table']}_{r.get('check_name', '')}_{r.get('column') or ''}"
 
                 # Extract expected/actual from failure_details (v1.1.0 format)
