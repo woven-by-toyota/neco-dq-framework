@@ -161,7 +161,7 @@ class TestBronzeSuggestions:
         with allure.step("Verify: table_freshness uses Delta metadata with 2 days stale"):
             tf = result["table_freshness"]
             assert tf["enabled"] is True
-            assert tf["max_days_stale"] == 2
+            assert tf["max_staleness_days"] == 2
             assert tf["severity"] == "warning"
 
     @allure.title("Build bronze suggestions — record_count_anomaly disabled by default")
@@ -185,7 +185,7 @@ class TestBronzeSuggestions:
             rca = result["record_count_anomaly"]
             assert rca["enabled"] is False
             assert rca["history_table"] == "<catalog.schema.dq_history_table>"
-            assert rca["allowed_deviation_percent"] == 40
+            assert rca["max_deviation_percent"] == 40
             assert rca["severity"] == "warning"
 
 
@@ -497,3 +497,54 @@ class TestGoldSuggestions:
 
         with allure.step("Verify: json_schema not suggested when no JSON columns"):
             assert "json_schema" not in result
+
+
+@allure.feature(AllureFeature.PROFILING_SUITE)
+@allure.story(AllureStory.PROFILING_SUGGEST)
+class TestSuggestionsMatchCheckSchema:
+    """Every generated check must be a valid config for the check it targets."""
+
+    @pytest.fixture
+    def df_rich(self, spark):
+        from datetime import datetime, timedelta
+
+        base = datetime(2026, 1, 1)
+        rows = [(i, ["new", "paid", "shipped"][i % 3], float(i * 7), base + timedelta(hours=i)) for i in range(30)]
+        return spark.createDataFrame(rows, ["id", "status", "revenue", "created_at"])
+
+    @allure.title("Generated bronze/silver/gold checks pass parameter-schema validation")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)
+    def test_generated_checks_have_no_unknown_or_missing_params(self, profiling_suite, df_rich):
+        """Generated configs must not trigger unknown-parameter warnings (or failures in error mode)."""
+        from neco_dq.core.registry.check_param_schema import get_check_schema, unknown_keys
+
+        with allure.step("Compute inputs"):
+            row_count = df_rich.count()
+            stats = profiling_suite._compute_column_stats(df_rich, row_count)
+            classified = profiling_suite._classify_columns(df_rich)
+            unique_cols = [col for col, s in stats.items() if s.get("distinct_ratio", 0) == 1.0]
+            date_cols = classified["date"]
+            not_null_cols = [col for col, s in stats.items() if s.get("null_count", 0) == 0]
+
+        with allure.step("Build suggestions for every layer"):
+            suites = {
+                "bronze": profiling_suite._build_bronze_suggestions(stats, not_null_cols, date_cols),
+                "silver": profiling_suite._build_silver_suggestions(unique_cols, date_cols, stats, row_count),
+                "gold": profiling_suite._build_gold_suggestions(unique_cols, date_cols, row_count, stats),
+            }
+
+        with allure.step("Verify: trend is among the generated checks"):
+            assert "trend" in suites["gold"]
+
+        with allure.step("Verify: each check config matches its schema"):
+            problems = []
+            for suite, checks in suites.items():
+                for check, cfg in checks.items():
+                    schema = get_check_schema(suite, check)
+                    if schema is None:
+                        continue
+                    for instance in cfg if isinstance(cfg, list) else [cfg]:
+                        problems += [f"{suite}.{check}: unknown {k}" for k in unknown_keys(suite, check, instance)]
+                        problems += [f"{suite}.{check}: missing {k}" for k in schema["required"] if k not in instance]
+            assert problems == []

@@ -497,6 +497,109 @@ class TestSilverTemporalConsistency:
         pass
 
 
+class _TableStub:
+    """Resolves ``spark.table(fq_name)`` to in-memory DataFrames; delegates the rest."""
+
+    def __init__(self, spark, tables: dict):
+        self._spark = spark
+        self._tables = tables
+
+    def table(self, fq_name: str):
+        return self._tables[fq_name]
+
+    def __getattr__(self, name):
+        return getattr(self._spark, name)
+
+
+@allure.feature(AllureFeature.SILVER_SUITE)
+@allure.story(AllureStory.CROSS_TABLE_EQUALITY)
+class TestSilverCompositeJoinColumns:
+    """Cross-table checks join on every column of a list-valued join_columns."""
+
+    @pytest.fixture
+    def tenant_tables(self, spark, silver_suite, monkeypatch):
+        # Same id in two tenants: joining on id alone pairs rows across tenants.
+        left = spark.createDataFrame(
+            [("A", 1, 10.0, "2026-01-01 10:00:00"), ("B", 1, 20.0, "2026-01-01 10:00:00")],
+            ["tenant", "id", "amount", "created_at"],
+        )
+        right = spark.createDataFrame(
+            [("A", 1, 10.0, "2026-01-01 11:00:00"), ("B", 1, 20.0, "2026-01-01 09:00:00")],
+            ["tenant", "id", "amount", "processed_at"],
+        )
+        stub = _TableStub(spark, {"c.s.left": left, "c.s.right": right})
+        monkeypatch.setattr(silver_suite, "spark", stub)
+        return {"catalog": "c", "schema": "s", "table": "left"}
+
+    @pytest.mark.spark
+    @allure.title("Cross table equality joins on all composite join columns")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)
+    def test_cross_table_equality_composite_join_columns(self, silver_suite, tenant_tables):
+        """Values match per (tenant, id); a single-key join would report mismatches."""
+        with allure.step("Setup config with composite join columns"):
+            cfg = {
+                "right_schema": "s",
+                "right_table": "right",
+                "join_columns": ["tenant", "id"],
+                "left_column": "amount",
+                "right_column": "amount",
+            }
+
+        with allure.step("Execute cross table equality"):
+            passed, details, _column = silver_suite._check_cross_table_equality(cfg, tenant_tables)
+
+        with allure.step("Verify: 2 joined rows, all matching"):
+            assert passed is True, details
+            assert "2" in details
+
+    @pytest.mark.spark
+    @allure.title("Flow completeness reports missing records on composite join columns")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
+    def test_flow_completeness_composite_join_columns(self, spark, silver_suite, monkeypatch):
+        """(B, 1) is missing in target; failure stats list each key column."""
+        with allure.step("Setup source and target tables"):
+            src = spark.createDataFrame([("A", 1), ("B", 1)], ["tenant", "id"])
+            trg = spark.createDataFrame([("A", 1)], ["tenant", "id"])
+            monkeypatch.setattr(silver_suite, "spark", _TableStub(spark, {"c.s.src": src, "c.s.trg": trg}))
+            cfg = {"source_schema": "s", "source_table": "src", "join_columns": ["tenant", "id"]}
+
+        with allure.step("Execute flow completeness"):
+            passed, _details, _column = silver_suite._check_flow_completeness(
+                cfg, {"catalog": "c", "schema": "s", "table": "trg"}
+            )
+
+        with allure.step("Verify: 1 missing record, flat affected columns, rendered query"):
+            assert passed is False
+            assert silver_suite._last_failure_stats["failure_count"] == 1
+            assert silver_suite._last_failure_stats["affected_columns"] == ["tenant", "id"]
+            assert "ON src.tenant = tgt.tenant AND src.id = tgt.id" in (silver_suite._last_investigation_query["query"])
+
+    @pytest.mark.spark
+    @allure.title("Temporal consistency joins on all composite join columns")
+    @allure.severity(AllureSeverity.CRITICAL)
+    @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
+    def test_temporal_consistency_composite_join_columns(self, silver_suite, tenant_tables):
+        """Only tenant B violates ordering; a single-key join would pair 4 rows."""
+        with allure.step("Setup config with composite join columns"):
+            cfg = {
+                "right_schema": "s",
+                "right_table": "right",
+                "join_columns": ["tenant", "id"],
+                "left_timestamp_column": "created_at",
+                "right_timestamp_column": "processed_at",
+            }
+
+        with allure.step("Execute temporal consistency"):
+            passed, _details, _column = silver_suite._check_temporal_consistency(cfg, tenant_tables)
+
+        with allure.step("Verify: exactly 1 violation out of 2 joined rows"):
+            assert passed is False
+            assert silver_suite._last_failure_stats["failure_count"] == 1
+            assert silver_suite._last_failure_stats["total_rows_checked"] == 2
+
+
 @allure.feature(AllureFeature.SILVER_SUITE)
 @allure.story(AllureStory.FLOW_COMPLETENESS)
 class TestSilverFlowCompleteness:

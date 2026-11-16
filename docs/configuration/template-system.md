@@ -102,7 +102,7 @@ silver:
       table: "{{ t.table }}"
       checks:
         idempotency:
-          key_column: "{{ t.pk_id }}"
+          key_columns: "{{ t.pk_id }}"
           enabled: true
 {% endfor %}
 ```
@@ -159,7 +159,7 @@ silver:
 
 {% if t.status_column is defined %}
         status_transition:
-          key_column: "{{ t.pk_id[0] if t.pk_id is not string else t.pk_id }}"
+          key_columns: "{{ t.pk_id[0] if t.pk_id is not string else t.pk_id }}"
           status_column: "{{ t.status_column }}"
           timestamp_column: "{{ t.timestamp_column }}"
           allowed_flow:

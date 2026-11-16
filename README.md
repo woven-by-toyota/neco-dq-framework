@@ -112,7 +112,7 @@ For local development (running the test suite, contributing), clone the repo and
 
 ```bash
 git clone https://github.com/woven-by-toyota/neco-dq-framework.git
-cd qa-nexus-dq-framework
+cd neco-dq-framework
 uv sync --extra dev --frozen
 ```
 
@@ -138,7 +138,7 @@ A minimal config:
       severity: critical     # critical | error | warning | info
       blocking: true         # if true, a failure raises exit_code=20
       tags: [daily, critical] # used to filter checks at runtime
-      key_column: id         # column(s) that must be unique
+      key_columns: [id]      # column(s) that must be unique
 ```
 
 `run_dq` returns a summary dict and accepts a few options for controlling a run:
@@ -201,7 +201,7 @@ compare_metric:
     type: sql
     query: "SELECT SUM(amount) FROM {{ var.catalog }}.silver.orders"
   operator: within_pct
-  tolerance: 0.5
+  tolerance_abs: 0.5
 ```
 
 ## Development

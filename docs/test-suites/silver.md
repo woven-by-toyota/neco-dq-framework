@@ -130,7 +130,7 @@ checks support it:
 | `business_rules` | yes (shared check) |
 | `json_schema` | yes (shared check) |
 | `distinct_count` | no (binary pass/fail) |
-| `referential_integrity` | no (uses `min_valid_ratio`) |
+| `referential_integrity` | no (uses `min_valid_percent`) |
 | `totals_consistency` | no (uses `tolerance_abs`) |
 | `cross_table_equality` | no (uses `tolerance_abs`) |
 | `temporal_consistency` | no (binary pass/fail) |
@@ -303,11 +303,11 @@ status_transition:
 
 **Key configuration:**
 - `source_column`: FK column in the table under validation (required)
-- `target_schema` / `target_table` / `target_column`: target table and PK column
+- `target`: target table and PK column, as a nested block with `schema`, `table`, `column` (and optional `catalog`)
 - `source_schema` / `source_table` / `source_catalog` (optional): override the
   source table; all default to the table under validation (`table_ctx`), so you
   normally omit them
-- `min_valid_ratio` (optional): minimum acceptable match ratio (default: 1.0)
+- `min_valid_percent` (optional): minimum percent (0–100) of valid references (default: 100)
 
 **Result details:** `valid_ratio=<ratio>; min_ratio=<ratio>`
 
@@ -325,9 +325,10 @@ referential_integrity:
   blocking: true
   # source defaults to the table under validation; only the FK column is needed
   source_column: product_id
-  target_schema: my_schema_gold
-  target_table: products
-  target_column: product_id
+  target:
+    schema: my_schema_gold
+    table: products
+    column: product_id
 ```
 
 **Example Output:**
@@ -406,7 +407,7 @@ cardinality:
 - Allows configurable tolerance for floating-point differences
 
 **Key configuration:**
-- `join_columns`: key to join header and detail tables
+- `join_columns`: column, or list of columns, to join header and detail tables
 - `detail_schema` / `detail_table`: detail table location
 - `detail_amount_column`: column to aggregate in detail table
 - `header_amount_column`: column in header table to compare against
@@ -456,12 +457,13 @@ totals_consistency:
 **Key configuration:**
 - `left_column`: column on the left side (the table under validation)
 - `right_schema` / `right_table` / `right_column`: right side of comparison
-- `join_columns`: column to join on
+- `join_columns`: column, or list of columns, to join on (a list joins on all of them, e.g. `[tenant_id, order_id]`)
 - `tolerance_abs`: acceptable absolute difference (default: 0.0)
-- `left_schema` / `left_table` / `left_catalog` (optional): override the left
-  side; all default to the table under validation (`table_ctx`)
-- `catalog` (optional): shared catalog for both sides (default: current table's
-  catalog); use `left_catalog` / `right_catalog` for a cross-catalog comparison
+- `left_schema` / `left_table` (optional): override the left side; both default
+  to the table under validation (`table_ctx`)
+- `catalog` (optional): catalog for **both** sides (default: current table's
+  catalog). Both tables must live in the same catalog: per-side catalogs are not
+  supported
 
 **Result details (v1.1.0+):**
 - PASS: `"All {n} records match"`
@@ -581,11 +583,12 @@ compare_metric:
 **Key configuration:**
 - `left_timestamp_column`: timestamp column on the left (the table under validation)
 - `right_schema` / `right_table` / `right_timestamp_column`: right table and timestamp
-- `join_columns`: column to join on
-- `left_schema` / `left_table` / `left_catalog` (optional): override the left
-  side; all default to the table under validation (`table_ctx`)
-- `catalog` (optional): shared catalog for both sides (default: current table's
-  catalog); use `left_catalog` / `right_catalog` for a cross-catalog comparison
+- `join_columns`: column, or list of columns, to join on (a list joins on all of them, e.g. `[tenant_id, order_id]`)
+- `left_schema` / `left_table` (optional): override the left side; both default
+  to the table under validation (`table_ctx`)
+- `catalog` (optional): catalog for **both** sides (default: current table's
+  catalog). Both tables must live in the same catalog: per-side catalogs are not
+  supported
 
 **Result details (v1.1.0+):**
 - PASS: `"All {n} records in valid order"`
@@ -689,7 +692,7 @@ row_temporal_consistency:
 
 **Key configuration:**
 - `source_schema` / `source_table`: upstream table
-- `join_columns`: column to join on
+- `join_columns`: column, or list of columns, to join on (a list joins on all of them, e.g. `[tenant_id, order_id]`)
 - `source_filter` (optional): SQL filter for source records
 
 **Result details (v1.1.0+):**
@@ -923,7 +926,7 @@ business_rules:
 - Fails if the delay exceeds the allowed threshold
 
 **Key configuration:**
-- `timestamp_column`: timestamp column to check (required)
+- `timestamp_column`: timestamp column to check (required; `TIMESTAMP` or `DATE`, a date is read as midnight UTC of that day)
 - `max_delay_hours`: maximum acceptable delay (default: 24)
 
 **Result details:** `latest=<timestamp>; age_h=<hours>; max_delay_h=<threshold>`
@@ -1018,9 +1021,10 @@ silver:
           severity: critical
           blocking: true
           source_column: product_id
-          target_schema: my_schema_gold
-          target_table: products
-          target_column: product_id
+          target:
+            schema: my_schema_gold
+            table: products
+            column: product_id
 
         row_temporal_consistency:
           enabled: true

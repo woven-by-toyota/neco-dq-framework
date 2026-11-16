@@ -34,6 +34,7 @@ aliases; the resolver already tolerates callables for forward compatibility.
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Callable
 from typing import Any
 
@@ -567,8 +568,16 @@ def _set_nested(cfg: dict, dotted: str, value: Any) -> None:
     cur[parts[-1]] = value
 
 
+class CheckConfigError(ValueError):
+    """Invalid check parameters under ``unknown_check_params: error``.
+
+    Raised at config validation time; fatal for the whole run (not a check
+    failure), so the orchestrator re-raises it instead of summarizing a crash.
+    """
+
+
 def resolve_aliases(suite: str, check_name: str, cfg: dict) -> tuple[dict, list[dict[str, str]]]:
-    """Return a cfg copy with deprecated keys renamed, plus deprecation records.
+    """Return a deep cfg copy with deprecated keys renamed, plus deprecation records.
 
     Each deprecation record is ``{"check", "old", "new"}``. If the canonical
     key is already present, the deprecated key is dropped (canonical wins) and
@@ -578,7 +587,7 @@ def resolve_aliases(suite: str, check_name: str, cfg: dict) -> tuple[dict, list[
     if entry is None or not entry.get("aliases"):
         return cfg, []
 
-    new_cfg = dict(cfg)
+    new_cfg = copy.deepcopy(cfg)
     deprecations: list[dict[str, str]] = []
     for old, target in entry["aliases"].items():
         present, value = _get_nested(new_cfg, old)
@@ -607,12 +616,14 @@ def resolve_aliases(suite: str, check_name: str, cfg: dict) -> tuple[dict, list[
 def unknown_keys(suite: str, check_name: str, cfg: dict) -> list[str]:
     """Return top-level cfg keys not understood by the check (post-alias).
 
-    Empty when the check is not in the schema (validation skipped).
+    Empty when the check is not in the schema (validation skipped). Keys
+    starting with ``_`` are annotations (e.g. ``_reason`` / ``_confidence`` in
+    profiling suggestions), not parameters, and are never reported.
     """
     allowed = allowed_keys(suite, check_name)
     if allowed is None:
         return []
-    return sorted(k for k in cfg if k not in allowed)
+    return sorted(k for k in cfg if k not in allowed and not str(k).startswith("_"))
 
 
 def forbidden_keys_present(suite: str, check_name: str, cfg: dict) -> list[str]:

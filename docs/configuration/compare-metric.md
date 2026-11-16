@@ -34,7 +34,7 @@ compare_metric:
     # ... resolver-specific parameters
 
   operator: "=="                # Comparison operator
-  tolerance: 0.01               # Optional: for approximate comparisons
+  tolerance_abs: 0.01               # Optional: for approximate comparisons
 ```
 
 !!! info "Key Aliases"
@@ -433,12 +433,12 @@ For approximate comparisons with floating-point values:
 
 ```yaml
 operator: "~"
-tolerance: 0.01    # Absolute tolerance: |observed - expected| <= 0.01
+tolerance_abs: 0.01  # Absolute tolerance: |observed - expected| <= 0.01
 ```
 
 ```yaml
 operator: "within_pct"
-tolerance: 5.0     # Percentage tolerance: difference <= 5%
+tolerance_abs: 5.0   # With within_pct the value is a percentage: difference <= 5%
 ```
 
 ---
@@ -577,7 +577,7 @@ compare_metric:
 
   value: 100.00
   operator: "~"
-  tolerance: 0.01
+  tolerance_abs: 0.01
 ```
 
 ### Example 5: Weighted Mean from Array
@@ -611,7 +611,7 @@ compare_metric:
       - product_id
 
   operator: "~"
-  tolerance: 0.001
+  tolerance_abs: 0.001
 ```
 
 ### Example 6: Kendall W Consensus Validation
@@ -650,7 +650,7 @@ compare_metric:
       - product_id
 
   operator: "~"
-  tolerance: 0.01
+  tolerance_abs: 0.01
 ```
 
 ### Example 7: Borda Count Validation
@@ -746,7 +746,7 @@ details: Found 3/100 groups failing; group=('order_1', 'prod_5'): observed=4.2, 
 |-------|-------|----------|
 | "No matching groups" | Group keys don't match | Ensure `group_by` columns exist in both sources |
 | Type mismatch | Comparing incompatible types | Check `value_type` for arrays |
-| Tolerance not working | Using `==` instead of `~` | Use `~` operator with `tolerance` |
+| Tolerance not working | Using `==` instead of `~` | Use `~` operator with `tolerance_abs` |
 | Empty results | Filter too restrictive | Check `where` conditions |
 
 ### Debugging Tips
@@ -754,7 +754,7 @@ details: Found 3/100 groups failing; group=('order_1', 'prod_5'): observed=4.2, 
 1. **Start simple**: Test with `type: count` and static `value` first
 2. **Check group alignment**: Ensure `group_by` columns match exactly
 3. **Use named checks**: Add `name` for easier identification in results
-4. **Test tolerance**: For floating-point comparisons, always use `~` with `tolerance`
+4. **Test tolerance**: For floating-point comparisons, always use `~` with `tolerance_abs`
 
 ---
 

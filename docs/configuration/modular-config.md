@@ -184,7 +184,7 @@ Test groups organize related validations into separate files for better organiza
         record_count_anomaly:
           enabled: true
           history_table: my_dq_catalog.dq_metadata.dq_test_history
-          allowed_deviation_percent: 40
+          max_deviation_percent: 40
 ```
 
 ## How Test Groups Work
@@ -252,7 +252,7 @@ default_checks:
     enabled: true
     severity: warning
     blocking: false
-    max_days_stale: 2
+    max_staleness_days: 2
 
   mandatory_fields:
     enabled: true
@@ -286,7 +286,7 @@ tables:
       # This ADDS a new check specific to this table
       freshness:
         enabled: true
-        column: order_date
+        timestamp_column: order_date
         max_delay_hours: 24
 
       # record_count and table_freshness are INHERITED automatically
@@ -411,13 +411,13 @@ default_checks:
     enabled: true
     severity: critical
     blocking: true
-    key_column: id
+    key_columns: [id]
 
   freshness:
     enabled: true
     severity: warning
     blocking: false
-    column: updated_at
+    timestamp_column: updated_at
     max_delay_hours: 24
 
 data_to_save:
@@ -449,17 +449,18 @@ tables:
         enabled: true
         severity: critical
         blocking: true
-        key_column: order_id
+        key_columns: [order_id]
 
       # Add referential integrity check
       referential_integrity:
         enabled: true
-        schema: silver
-        table: orders
+        source_schema: silver
+        source_table: orders
         source_column: customer_id
-        target_schema: silver
-        target_table: customers
-        target_column: customer_id
+        target:
+          schema: silver
+          table: customers
+          column: customer_id
 ```
 
 ### Running the Configuration

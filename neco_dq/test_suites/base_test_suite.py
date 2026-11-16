@@ -9,6 +9,7 @@ from datetime import datetime, UTC
 from typing import Any
 
 from neco_dq.core.registry.check_param_schema import (
+    CheckConfigError,
     allowed_keys,
     forbidden_keys_present,
     resolve_aliases,
@@ -205,6 +206,13 @@ class DQTestSuite(ABC):
             return [cfg]
         raise ValueError(f"Invalid check configuration type: {type(cfg)}")
 
+    @staticmethod
+    def _as_column_list(value: str | list[str] | None) -> list[str]:
+        """Normalize a ``*_columns`` value (one column name or a list) to a list."""
+        if not value:
+            return []
+        return [value] if isinstance(value, str) else list(value)
+
     @property
     def _unknown_check_params_mode(self) -> str:
         """Strictness for unknown/forbidden check params (``dq_policy``, §7).
@@ -237,7 +245,7 @@ class DQTestSuite(ABC):
           strictness setting (§7): ``warn`` logs and continues, ``error``
           raises, ``ignore`` is silent.
 
-        Returns the resolved config (a shallow copy when aliases applied).
+        Returns the resolved config (an independent copy when aliases applied).
         """
         resolved, deprecations = resolve_aliases(self._suite_name, check_name, cfg)
 
@@ -269,7 +277,7 @@ class DQTestSuite(ABC):
             return resolved
 
         if mode == "error":
-            raise ValueError(f"[{self._suite_name}] check '{check_name}': " + "; ".join(problems))
+            raise CheckConfigError(f"[{self._suite_name}] check '{check_name}': " + "; ".join(problems))
 
         for problem in problems:
             logger.warning("[%s] check '%s': %s", self._suite_name, check_name, problem)
@@ -918,20 +926,20 @@ class DQTestSuite(ABC):
             "totals_mismatch": {
                 "description": "Find header/detail total mismatches",
                 "template": (
-                    "SELECT h.{join_key}, h.{header_amount} as header_total, "
+                    "SELECT {h_join_keys}, h.{header_amount} as header_total, "
                     "COALESCE(d.detail_sum, 0) as detail_sum, "
                     "h.{header_amount} - COALESCE(d.detail_sum, 0) as difference "
                     "FROM {table} h LEFT JOIN (SELECT {join_key}, SUM({detail_amount}) as detail_sum "
-                    "FROM {detail_table} GROUP BY {join_key}) d ON h.{join_key} = d.{join_key} "
+                    "FROM {detail_table} GROUP BY {join_key}) d ON {join_on_h_d} "
                     "WHERE ABS(h.{header_amount} - COALESCE(d.detail_sum, 0)) > {tolerance} LIMIT 100"
                 ),
             },
             "cross_table_mismatch": {
                 "description": "Find rows with different values between tables",
                 "template": (
-                    "SELECT l.{join_key}, l.{left_column} as left_value, r.{right_column} as right_value, "
+                    "SELECT {l_join_keys}, l.{left_column} as left_value, r.{right_column} as right_value, "
                     "l.{left_column} - r.{right_column} as difference "
-                    "FROM {left_table} l JOIN {right_table} r ON l.{join_key} = r.{join_key} "
+                    "FROM {left_table} l JOIN {right_table} r ON {join_on_l_r} "
                     "WHERE ABS(l.{left_column} - r.{right_column}) > {tolerance} "
                     "ORDER BY ABS(difference) DESC LIMIT 100"
                 ),
@@ -939,9 +947,9 @@ class DQTestSuite(ABC):
             "temporal_violation": {
                 "description": "Find rows violating timestamp order between tables",
                 "template": (
-                    "SELECT l.{join_key}, l.{left_timestamp} as left_ts, r.{right_timestamp} as right_ts, "
+                    "SELECT {l_join_keys}, l.{left_timestamp} as left_ts, r.{right_timestamp} as right_ts, "
                     "DATEDIFF(MINUTE, r.{right_timestamp}, l.{left_timestamp}) as minutes_diff "
-                    "FROM {left_table} l JOIN {right_table} r ON l.{join_key} = r.{join_key} "
+                    "FROM {left_table} l JOIN {right_table} r ON {join_on_l_r} "
                     "WHERE l.{left_timestamp} > r.{right_timestamp} "
                     "ORDER BY minutes_diff DESC LIMIT 100"
                 ),
@@ -959,10 +967,10 @@ class DQTestSuite(ABC):
             "incomplete_flow": {
                 "description": "Find source records missing in target (flow completeness)",
                 "template": (
-                    "SELECT src.* FROM {source_table} src "
-                    "LEFT JOIN {target_table} tgt ON src.{join_key} = tgt.{join_key} "
-                    "WHERE tgt.{join_key} IS NULL {source_filter} "
-                    "ORDER BY src.{join_key} LIMIT 100"
+                    "SELECT src.* FROM (SELECT * FROM {source_table} WHERE 1=1 {source_filter}) src "
+                    "LEFT JOIN {target_table} tgt ON {join_on_src_tgt} "
+                    "WHERE {tgt_first_join_key} IS NULL "
+                    "ORDER BY {src_join_keys} LIMIT 100"
                 ),
             },
             "incomplete_flow_lateness": {
@@ -972,9 +980,9 @@ class DQTestSuite(ABC):
                     "DATEDIFF(MINUTE, src.{lateness_column}, current_timestamp()) as delay_minutes, "
                     "CASE WHEN DATEDIFF(MINUTE, src.{lateness_column}, current_timestamp()) <= {max_delay_minutes} "
                     "THEN 'late' ELSE 'lost' END as status "
-                    "FROM {source_table} src "
-                    "LEFT JOIN {target_table} tgt ON src.{join_key} = tgt.{join_key} "
-                    "WHERE tgt.{join_key} IS NULL {source_filter} "
+                    "FROM (SELECT * FROM {source_table} WHERE 1=1 {source_filter}) src "
+                    "LEFT JOIN {target_table} tgt ON {join_on_src_tgt} "
+                    "WHERE {tgt_first_join_key} IS NULL "
                     "ORDER BY delay_minutes DESC LIMIT 100"
                 ),
             },
@@ -1023,6 +1031,21 @@ class DQTestSuite(ABC):
             "operator",
             "rule_expression",
             "schema",
+            # Cross-table templates (totals, cross-table, temporal, flow)
+            "header_amount",
+            "detail_amount",
+            "detail_table",
+            "left_column",
+            "right_column",
+            "left_table",
+            "right_table",
+            "left_timestamp",
+            "right_timestamp",
+            "source_table",
+            "source_filter",
+            "lateness_column",
+            "max_delay_minutes",
+            "tolerance",
         ]:
             if key in cfg:
                 val = cfg[key]
@@ -1030,6 +1053,15 @@ class DQTestSuite(ABC):
                     parameters[key] = ", ".join(str(v) for v in val)
                 else:
                     parameters[key] = val
+
+        # Join keys (one column or a list) rendered per table alias pair
+        join_keys = self._as_column_list(cfg.get("join_key"))
+        if join_keys:
+            parameters["join_key"] = ", ".join(join_keys)
+            for left, right in (("h", "d"), ("l", "r"), ("src", "tgt")):
+                parameters[f"{left}_join_keys"] = ", ".join(f"{left}.{k}" for k in join_keys)
+                parameters[f"join_on_{left}_{right}"] = " AND ".join(f"{left}.{k} = {right}.{k}" for k in join_keys)
+            parameters["tgt_first_join_key"] = f"tgt.{join_keys[0]}"
 
         # Format template with available parameters to produce final query
         try:
@@ -1731,17 +1763,22 @@ class DQTestSuite(ABC):
 
                 severity = self._severity(resolved_cfg)
                 blocking = self._blocking(resolved_cfg)
-                check_id = self._build_check_instance_name(name, resolved_cfg, idx, single_instance)
+                # Identity from the as-written cfg: keeps check IDs stable for legacy keys.
+                check_id = self._build_check_instance_name(name, cfg, idx, single_instance)
 
                 self._last_failure_stats = None
                 self._last_investigation_query = None
                 self._last_execution = None
+                # Persisted check_name of this instance; history-based checks look it up.
+                self._current_check_id = check_id
 
                 try:
                     func = getattr(self, f"_check_{name}")
                     passed, details, column = self._dispatch_check(func, name, df, resolved_cfg, table_ctx, fq_table)
                 except Exception as e:
                     passed, details, column = False, str(e), None
+                finally:
+                    self._current_check_id = None
 
                 self._register_check(
                     result,

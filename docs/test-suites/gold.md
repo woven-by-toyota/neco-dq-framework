@@ -79,7 +79,10 @@ gold:
           enabled: true
           severity: critical
           blocking: true
-          source_silver: my_catalog.my_schema_silver.payments
+          silver:
+            catalog: my_catalog
+            schema: my_schema_silver
+            table: payments
           gold_expr: amount
           silver_expr: amount
           tolerance_percent: 0.01
@@ -351,10 +354,12 @@ compare_metric:
 - Allows configurable tolerance for floating-point differences
 
 **Key configuration:**
-- `source_silver`: fully qualified Silver table name
+- `silver`: Silver table location, as a nested block with `catalog`, `schema`, `table`
 - `gold_expr`: SQL expression to aggregate Gold data
 - `silver_expr`: SQL expression to aggregate Silver data
 - `group_by` (optional): columns to group by for reconciliation
+- `gold_join_columns` / `silver_join_columns` (optional): restrict Silver to the
+  keys present in Gold; one column or a list, paired by position (same length)
 - `tolerance_percent`: acceptable percentage difference (default: 1.0)
 - `name` (optional): descriptive name
 
@@ -374,7 +379,13 @@ reconciliation_expr:
   blocking: false
   name: customers_reconciliation
 
-  source_silver: my_catalog.my_schema_silver.orders
+  silver:
+
+    catalog: my_catalog
+
+    schema: my_schema_silver
+
+    table: orders
 
   gold_expr: "SUM(unique_customers)"
   silver_expr: "COUNT(DISTINCT customer_id)"
@@ -414,7 +425,7 @@ reconciliation_expr:
 
 !!! note "Strict in Gold"
     Unlike Silver's `referential_integrity`, the Gold check has no
-    `min_valid_ratio`: it passes only when zero foreign keys are missing.
+    `min_valid_percent`: it passes only when zero foreign keys are missing.
 
 **Typical use:**
 - Validate Gold references to Silver
@@ -512,10 +523,10 @@ uniqueness:
 
 **Key configuration:**
 - `gold_expr`: SQL expression to aggregate Gold data
-- `gold_join_columns`: columns to join Gold data
+- `gold_join_columns`: column, or list of columns, to join Gold data
 - `silver_expr`: SQL expression to aggregate Silver data
-- `silver_table`: fully qualified Silver table name
-- `silver_join_columns`: columns to join Silver data
+- `silver`: Silver table location, as a nested block with `catalog`, `schema`, `table`
+- `silver_join_columns`: column, or list of columns, to join Silver data (paired by position with `gold_join_columns`)
 - `tolerance_percent`: acceptable coverage gap (default: 1.0%)
 - `name` (optional): descriptive name
 
@@ -539,7 +550,10 @@ coverage:
   gold_join_columns: [order_id]
 
   silver_expr: "COUNT(DISTINCT transaction_id)"
-  silver_table: my_catalog.my_schema_silver.orders
+  silver:
+    catalog: my_catalog
+    schema: my_schema_silver
+    table: orders
   silver_join_columns: [order_id]
 
   tolerance_percent: 5.0
@@ -572,7 +586,9 @@ coverage:
 - `min_value` (optional): minimum allowed value (stateless bounds mode)
 - `max_value` (optional): maximum allowed value (stateless bounds mode)
 - `group_by` (optional): columns to group by
-- `name` (optional): descriptive name (also used to match history rows)
+- `name` (optional): descriptive name; with several `volume` instances on one
+  table it becomes part of the check ID (`volume[name=<name>]`), which is what
+  history rows are matched on
 - `history` (optional): historical comparison settings
   - `table`: history table location
   - `window`: number of historical records to consider (default: 7)
@@ -615,7 +631,7 @@ volume:
   group_by:
     - order_id
 
-  tolerance_pct: 40
+  min_value: 1
 ```
 
 **Example Output:**
@@ -640,7 +656,7 @@ volume:
 - Fails if delay exceeds threshold
 
 **Key configuration:**
-- `timestamp_column`: timestamp column to check
+- `timestamp_column`: timestamp column to check (`TIMESTAMP` or `DATE`; a date is read as midnight UTC of that day)
 - `max_delay_hours`: maximum acceptable delay (default: 24)
 
 **Result details:** `latest=<timestamp>; delay_hours=<hours>`
@@ -778,11 +794,14 @@ completeness:
 
 **Key configuration:**
 - `metric`: SQL expression for the metric (required)
-- `history_table`: Table containing historical DQ results (required)
-- `name`: Check name to lookup in history (required)
-- `window`: Number of historical records to consider (default: 7)
-- `min_history`: Minimum records required for comparison (default: 3)
-- `tolerance_pct`: Allowed percentage deviation from median (default: 20)
+- `name`: instance label (required); with several `trend` instances on one table it
+  becomes part of the check ID (`trend[name=<name>]`). History is matched on that
+  persisted check ID
+- `history`: historical comparison settings (required)
+  - `table`: table containing historical DQ results (required)
+  - `window`: number of historical records to consider (default: 7)
+  - `min_history`: minimum records required for comparison (default: 3)
+  - `tolerance_percent`: allowed percentage deviation from median (default: 20)
 - `direction`: Expected trend - "stable", "increasing", "decreasing" (default: stable)
 
 **Result details:** `current=<value>; baseline=<median>; deviation_pct=<pct>; direction=<dir>`
@@ -800,11 +819,12 @@ trend:
   severity: warning
   blocking: false
   metric: "COUNT(*)"
-  history_table: my_dq_catalog.dq_metadata.dq_test_history
+  history:
+    table: my_dq_catalog.dq_metadata.dq_test_history
+    window: 7
+    min_history: 3
+    tolerance_percent: 20
   name: daily_record_count
-  window: 7
-  min_history: 3
-  tolerance_pct: 20
   direction: stable
 ```
 
@@ -816,11 +836,12 @@ trend:
   severity: warning
   blocking: false
   metric: "SUM(revenue)"
-  history_table: analytics_gold.dq.history
+  history:
+    table: analytics_gold.dq.history
+    window: 12
+    min_history: 6
+    tolerance_percent: 10
   name: monthly_revenue_trend
-  window: 12
-  min_history: 6
-  tolerance_pct: 10
   direction: increasing
 ```
 
@@ -1012,7 +1033,10 @@ gold:
           severity: critical
           blocking: true
           name: amount_reconciliation
-          source_silver: my_catalog.my_schema_silver.payments
+          silver:
+            catalog: my_catalog
+            schema: my_schema_silver
+            table: payments
           gold_expr: amount
           silver_expr: amount
           tolerance_percent: 0.01
@@ -1073,7 +1097,10 @@ gold:
           severity: warning
           blocking: false
           name: customers_reconciliation
-          source_silver: my_catalog.my_schema_silver.orders
+          silver:
+            catalog: my_catalog
+            schema: my_schema_silver
+            table: orders
           gold_expr: "SUM(unique_customers)"
           silver_expr: "COUNT(DISTINCT customer_id)"
           group_by:
@@ -1089,7 +1116,10 @@ gold:
           gold_expr: "SUM(orders_n)"
           gold_join_columns: [order_id]
           silver_expr: "COUNT(DISTINCT transaction_id)"
-          silver_table: my_catalog.my_schema_silver.orders
+          silver:
+            catalog: my_catalog
+            schema: my_schema_silver
+            table: orders
           silver_join_columns: [order_id]
           tolerance_percent: 5.0
 
@@ -1101,7 +1131,7 @@ gold:
           metric: "SUM(orders_n)"
           group_by:
             - order_id
-          tolerance_pct: 40
+          min_value: 1
 
     # Revenue rollup table
     - catalog: my_catalog

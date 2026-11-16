@@ -4,6 +4,7 @@
 
 import contextlib
 import re
+import statistics
 from datetime import UTC, datetime
 from typing import Any
 
@@ -13,6 +14,9 @@ from pyspark.sql import functions as f
 from neco_dq.test_suites.base_test_suite import DQTestSuite
 from neco_dq.test_suites.shared_checks import SharedChecksMixin
 from neco_dq.core.io.result_writer import DQResultWriter
+
+# A numeric token as written by str(int | float | Decimal), exponent included ("1e-06").
+_NUMBER = r"[0-9]+(?:\.[0-9]*)?(?:[eE][+-]?[0-9]+)?"
 
 
 class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
@@ -91,9 +95,18 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
         gold_filter = cfg.get("gold_filter")
         silver_filter = cfg.get("silver_filter")
         group_by = cfg.get("group_by", [])
-        gold_join_col = cfg.get("gold_join_columns")
-        silver_join_col = cfg.get("silver_join_columns")
+        gold_join_cols = self._as_column_list(cfg.get("gold_join_columns"))
+        silver_join_cols = self._as_column_list(cfg.get("silver_join_columns"))
         name = cfg.get("name")
+
+        if bool(gold_join_cols) ^ bool(silver_join_cols):
+            return (
+                False,
+                self._details_config_missing("gold_join_columns and silver_join_columns (both required)"),
+                None,
+            )
+        if len(gold_join_cols) != len(silver_join_cols):
+            return False, "Invalid config: gold_join_columns and silver_join_columns must have same length", None
 
         g_df, s_df = df_gold, df_silver
         gold_rows = g_df.count()
@@ -101,16 +114,17 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
         # ------------------------------------------------------------------
         # Optional domain restriction (Gold → Silver)
         # ------------------------------------------------------------------
-        if gold_join_col and silver_join_col:
-            # Extract distinct gold IDs with consistent column name for join
-            gold_ids = g_df.select(f.col(gold_join_col).cast("string").alias("_join_key")).distinct()
+        if gold_join_cols and silver_join_cols:
+            # Distinct gold keys under common names (_join_key_<i>), one per key column
+            key_names = [f"_join_key_{i}" for i in range(len(gold_join_cols))]
+            gold_ids = g_df.select(
+                *[f.col(c).cast("string").alias(k) for c, k in zip(gold_join_cols, key_names, strict=True)]
+            ).distinct()
 
-            # Cast silver column and join on the common key
-            s_df = (
-                s_df.withColumn("_join_key", f.col(silver_join_col).cast("string"))
-                .join(gold_ids, "_join_key", "inner")
-                .drop("_join_key")
-            )
+            # Cast silver key columns and join on all common keys
+            for c, k in zip(silver_join_cols, key_names, strict=True):
+                s_df = s_df.withColumn(k, f.col(c).cast("string"))
+            s_df = s_df.join(gold_ids, key_names, "inner").drop(*key_names)
 
         # ------------------------------------------------------------------
         # Optional filters
@@ -454,8 +468,8 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
         # Resolve join keys
         # ------------------------------------------------------------------
         join_keys = cfg.get("join_columns")
-        gold_keys = cfg.get("gold_join_columns", join_keys)
-        silver_keys = cfg.get("silver_join_columns", join_keys)
+        gold_keys = self._as_column_list(cfg.get("gold_join_columns", join_keys))
+        silver_keys = self._as_column_list(cfg.get("silver_join_columns", join_keys))
 
         if bool(gold_keys) ^ bool(silver_keys):
             return (
@@ -660,7 +674,7 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
             history_df = (
                 self.spark.table(history_table)
                 .filter(
-                    (f.col("check_name") == cfg.get("name", "volume"))
+                    (f.col("check_name") == (getattr(self, "_current_check_id", None) or cfg.get("name", "volume")))
                     & (f.col("catalog") == table_ctx["catalog"])
                     & (f.col("schema") == table_ctx["schema"])
                     & (f.col("table") == table_ctx["table"])
@@ -673,18 +687,19 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
             min_hist = history_cfg.get("min_history", 3)
 
             if hist_cnt >= min_hist:
-                baseline = history_df.selectExpr(
-                    """
-                        percentile_approx(
-                        try_cast(regexp_extract(details, 'value=([0-9.]+)', 1) AS DOUBLE),
-                        0.5
-                        ) AS baseline
-                        """
-                ).first()[0]
+                # Parse values with the same extractor as trend: history rows hold what
+                # this check emits ("Volume OK: 123", "Volume 123 deviation ...").
+                hist_values = [
+                    v
+                    for row in history_df.select("details").collect()
+                    if (v := self._extract_metric_from_details(row["details"] or "")) is not None
+                ]
+                baseline = statistics.median(hist_values) if hist_values else None
 
                 if baseline and baseline > 0:
                     tol = history_cfg.get("tolerance_percent", 10)
-                    deviation = abs(current_value - baseline) / baseline * 100
+                    # As floats: SUM over a DECIMAL column returns Decimal.
+                    deviation = abs(float(current_value) - baseline) / baseline * 100
                     passed = deviation <= tol
 
                     failure_stats = None
@@ -720,7 +735,8 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
                     if passed:
                         details = f"Volume OK: {current_value} (within {tol}% of baseline {baseline})"
                     else:
-                        details = self._details_fail_deviation("Historical", deviation, tol)
+                        # Keep the current value in the message: later runs read it back as history.
+                        details = self._details_fail_deviation(f"Volume {current_value}", deviation, tol)
 
                     self._last_failure_stats = failure_stats
                     self._last_investigation_query = investigation_query
@@ -809,7 +825,7 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
 
     def _check_cross_gold(
         self,
-        df: DataFrame,  # noqa: ARG002 - 'df' required so dispatch passes table_ctx (3-arg signature)
+        df: DataFrame,
         cfg: dict[str, Any],
         table_ctx: dict[str, str],
     ) -> tuple[bool, str, str | None]:
@@ -838,7 +854,8 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
         default_left = f"{table_ctx['catalog']}.{table_ctx['schema']}.{table_ctx['table']}"
         left_table = cfg.get("left_table", default_left)
         right_table = cfg["right_table"]
-        df_left = self.spark.table(left_table)
+        # Implicit left side = the table under validation, already row/partition filtered.
+        df_left = self.spark.table(left_table) if "left_table" in cfg else df
         df_right = self.spark.table(right_table)
 
         # Apply optional filters
@@ -1087,7 +1104,7 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
         result: float | None = None
 
         # Try key=value patterns (most explicit)
-        pattern = r"(?:metric|value|current|gold|silver|count|total)[\s:=]+([0-9]+\.?[0-9]*)"
+        pattern = rf"(?:metric|value|current|gold|silver|count|total)[\s:=]+({_NUMBER})"
         match = re.search(pattern, details, re.IGNORECASE)
         if match:
             with contextlib.suppress(ValueError):
@@ -1095,32 +1112,32 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
 
         # Try "Volume OK: X" or "Count: X" style
         if result is None:
-            match = re.search(r"(?:Volume|Count|Rows?)[^0-9]*([0-9]+\.?[0-9]*)", details, re.IGNORECASE)
+            match = re.search(rf"(?:Volume|Count|Rows?)[^0-9]*({_NUMBER})", details, re.IGNORECASE)
             if match:
                 with contextlib.suppress(ValueError):
                     result = float(match.group(1))
 
         # Try "X rows" or "X records" style
         if result is None:
-            match = re.search(r"([0-9]+\.?[0-9]*)\s*(?:rows?|records?)", details, re.IGNORECASE)
+            match = re.search(rf"({_NUMBER})\s*(?:rows?|records?)", details, re.IGNORECASE)
             if match:
                 with contextlib.suppress(ValueError):
                     result = float(match.group(1))
 
         # Last resort: first number in the string (avoiding percentages)
         if result is None:
-            match = re.search(r"([0-9]+\.?[0-9]*)", details)
+            match = re.search(rf"({_NUMBER})", details)
             if match:
                 # A regex-matched numeric token should always parse; suppress
                 # the unlikely ValueError and fall through to return None.
                 with contextlib.suppress(ValueError):
                     val = float(match.group(1))
                     # Avoid extracting percentages as the metric
-                    pct_check = re.search(r"([0-9]+\.?[0-9]*)\s*%", details)
+                    pct_check = re.search(rf"({_NUMBER})\s*%", details)
                     if pct_check and pct_check.group(1) == match.group(1):
                         # This is a percentage, try to find another number
                         remaining = details[match.end() :]
-                        next_match = re.search(r"([0-9]+\.?[0-9]*)", remaining)
+                        next_match = re.search(rf"({_NUMBER})", remaining)
                         if next_match:
                             result = float(next_match.group(1))
                     else:
@@ -1141,7 +1158,7 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
                 window: Number of historical records to consider (default: 7)
                 min_history: Minimum records required for comparison (default: 3)
                 tolerance_percent: Allowed percentage deviation from median (default: 20)
-            name: Check name to lookup in history (required)
+            name: Instance label (required); history is matched on the persisted check ID
             direction: Expected trend direction - "stable", "increasing", "decreasing" (default: stable)
         """
         start_time = datetime.now(UTC)
@@ -1155,7 +1172,9 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
 
         metric_expr = cfg["metric"]
         history_table = history_cfg["table"]
-        check_name = cfg["name"]
+        # History rows are keyed by the persisted check ID (e.g. ``trend`` or
+        # ``trend[name=x]``); ``name`` is the fallback for direct calls.
+        check_name = getattr(self, "_current_check_id", None) or cfg["name"]
         window = int(history_cfg.get("window", 7))
         min_history = int(history_cfg.get("min_history", 3))
         tolerance_pct = float(history_cfg.get("tolerance_percent", 20))
@@ -1226,18 +1245,19 @@ class SparkGoldDQTestSuite(DQTestSuite, SharedChecksMixin):
             mid = len(sorted_vals) // 2
             baseline = sorted_vals[mid] if len(sorted_vals) % 2 == 1 else (sorted_vals[mid - 1] + sorted_vals[mid]) / 2
 
-            # Check deviation
+            # Check deviation (as floats: SUM over a DECIMAL column returns Decimal)
+            current = float(current_value)
             deviation_pct = (
                 100.0
-                if baseline == 0 and current_value != 0
-                else (0.0 if baseline == 0 else abs(current_value - baseline) / baseline * 100)
+                if baseline == 0 and current != 0
+                else (0.0 if baseline == 0 else abs(current - baseline) / baseline * 100)
             )
 
             # Check direction
             direction_checks = {
                 "stable": deviation_pct <= tolerance_pct,
-                "increasing": current_value >= baseline * (1 - tolerance_pct / 100),
-                "decreasing": current_value <= baseline * (1 + tolerance_pct / 100),
+                "increasing": current >= baseline * (1 - tolerance_pct / 100),
+                "decreasing": current <= baseline * (1 + tolerance_pct / 100),
             }
             if direction not in direction_checks:
                 return False, f"Invalid config: direction '{direction}' not supported", None

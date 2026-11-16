@@ -86,13 +86,13 @@ Names must describe behavior, not business domain:
 
 ### Parameter Names
 
-Use standardized generic parameter names:
+Use standardized generic parameter names (full rules in [Naming conventions](../configuration/naming-conventions.md)):
 
 | Parameter | Type | Purpose |
 |-----------|------|---------|
 | `column` | `str` | Single column name |
 | `columns` | `list[str]` | Multiple column names |
-| `key_column` | `str \| list[str]` | Primary/composite key |
+| `key_columns` | `str \| list[str]` | Primary/composite key |
 | `timestamp_column` | `str` | Timestamp field |
 | `value_column` | `str` | Numeric value field |
 | `group_by` | `list[str]` | Grouping columns |
@@ -160,7 +160,7 @@ df.collect()  # Use df.agg() instead
 Support both single string and list:
 
 ```python
-key_cols = cfg["key_column"]
+key_cols = cfg["key_columns"]
 
 # Normalize to list
 if isinstance(key_cols, str):

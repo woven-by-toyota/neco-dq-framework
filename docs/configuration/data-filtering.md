@@ -216,7 +216,7 @@ silver:
           enabled: true
           severity: critical
           blocking: true
-          key_column: order_id
+          key_columns: [order_id]
 
     - catalog: prod_catalog
       schema: sales
@@ -224,12 +224,13 @@ silver:
       checks:
         referential_integrity:
           enabled: true
-          schema: sales
-          table: payments
+          source_schema: sales
+          source_table: payments
           source_column: order_id
-          target_schema: sales
-          target_table: orders
-          target_column: order_id
+          target:
+            schema: sales
+            table: orders
+            column: order_id
 ```
 
 ### Example 2: Rolling Window Validation
@@ -250,7 +251,7 @@ gold:
         volume:
           enabled: true
           metric: "SUM(revenue)"
-          tolerance_pct: 20
+          min_value: 1
 ```
 
 ### Example 3: Segment-Specific Validation
@@ -271,7 +272,7 @@ silver:
         business_rules:
           enabled: true
           name: valid_completed_orders
-          check: "shipping_date IS NOT NULL"
+          predicate: "shipping_date IS NOT NULL"
 ```
 
 ### Example 4: Mixed Filtering Strategies

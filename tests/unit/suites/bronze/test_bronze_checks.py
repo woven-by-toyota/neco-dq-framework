@@ -155,6 +155,101 @@ class TestBronzeFreshness:
             assert "No data in column" in details
             assert column == "updated_at"
 
+    @allure.title("Freshness reads a DATE column as midnight UTC")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.POSITIVE, AllureTag.SPARK)
+    def test_freshness_date_column_today_passes(self, bronze_suite, spark):
+        """A DATE max comes back as datetime.date, which has no tzinfo."""
+        with allure.step("Setup test data"):
+            from datetime import UTC, datetime as dt
+
+            today = dt.now(UTC).date()
+            df = spark.createDataFrame([(1, today)], "id INT, event_date DATE")
+            cfg = {"timestamp_column": "event_date", "max_delay_hours": 24}
+
+        with allure.step("Execute freshness check"):
+            passed, details, column = bronze_suite._check_freshness(df, cfg)
+
+        with allure.step("Verify: today's date is fresh"):
+            assert passed is True, details
+            assert column == "event_date"
+            assert "within 24h limit" in details
+
+    @allure.title("Freshness fails a stale DATE column")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
+    def test_freshness_date_column_stale_fails(self, bronze_suite, spark):
+        with allure.step("Setup test data"):
+            from datetime import UTC, datetime as dt, timedelta
+
+            stale = dt.now(UTC).date() - timedelta(days=10)
+            df = spark.createDataFrame([(1, stale)], "id INT, event_date DATE")
+            cfg = {"timestamp_column": "event_date", "max_delay_hours": 48}
+
+        with allure.step("Execute freshness check"):
+            passed, details, _ = bronze_suite._check_freshness(df, cfg)
+
+        with allure.step("Verify: stale date fails on age, not on an exception"):
+            assert passed is False
+            assert "exceeds 48h limit" in details
+
+
+@allure.feature(AllureFeature.BRONZE_SUITE)
+@allure.story(AllureStory.RECORD_COUNT_ANOMALY)
+class TestBronzeRecordCountAnomaly:
+    """Tests for record_count_anomaly check."""
+
+    @pytest.fixture
+    def history_with_previous_count(self, spark):
+        """Factory: materialize a history table whose last record_count row holds `prev`."""
+        spark.sql("CREATE SCHEMA IF NOT EXISTS rca_test")
+
+        def _make(prev: int) -> str:
+            from datetime import UTC, datetime as dt
+
+            spark.createDataFrame(
+                [("bronze", "record_count", "cat", "sch", "tbl", dt.now(UTC), f"Record count OK: {prev} rows")],
+                "test_suite STRING, check_name STRING, catalog STRING, schema STRING, "
+                "table STRING, run_timestamp TIMESTAMP, details STRING",
+            ).write.mode("overwrite").saveAsTable("rca_test.history")
+            return "rca_test.history"
+
+        yield _make
+        spark.sql("DROP SCHEMA IF EXISTS rca_test CASCADE")
+
+    @allure.title("Growth from a previous count of 0 is reported without a 0% deviation")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.EDGE_CASE, AllureTag.SPARK)
+    def test_previous_count_zero(self, bronze_suite, df_bronze_simple, history_with_previous_count):
+        with allure.step("Setup: history says the previous count was 0"):
+            history = history_with_previous_count(0)
+            cfg = {"history_table": history, "max_deviation_percent": 50}
+            table_ctx = {"catalog": "cat", "schema": "sch", "table": "tbl"}
+
+        with allure.step("Execute record_count_anomaly"):
+            passed, details, _ = bronze_suite._check_record_count_anomaly(df_bronze_simple, cfg, table_ctx)
+
+        with allure.step("Verify: fails with a message that does not claim 0% deviation"):
+            current = df_bronze_simple.count()
+            assert passed is False
+            assert details == f"Count went from 0 to {current} (no previous rows to compare against)"
+
+    @allure.title("Deviation above the limit reports the percentage")
+    @allure.severity(AllureSeverity.NORMAL)
+    @allure.tag(AllureTag.NEGATIVE, AllureTag.SPARK)
+    def test_deviation_exceeds_limit(self, bronze_suite, df_bronze_simple, history_with_previous_count):
+        with allure.step("Setup: previous count far above the current one"):
+            history = history_with_previous_count(1000)
+            cfg = {"history_table": history, "max_deviation_percent": 50}
+            table_ctx = {"catalog": "cat", "schema": "sch", "table": "tbl"}
+
+        with allure.step("Execute record_count_anomaly"):
+            passed, details, _ = bronze_suite._check_record_count_anomaly(df_bronze_simple, cfg, table_ctx)
+
+        with allure.step("Verify: the deviation message is unchanged"):
+            assert passed is False
+            assert "exceeds 50% limit" in details
+
 
 @allure.feature(AllureFeature.BRONZE_SUITE)
 @allure.story(AllureStory.SCHEMA_DRIFT)

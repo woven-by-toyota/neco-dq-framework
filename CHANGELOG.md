@@ -2,6 +2,38 @@
 
 ---
 
+## [1.4.1] - 2026-11-02
+
+Fixes from the review of the 1.4.0 check-parameter standardization.
+
+### Fixed
+
+- `freshness` works on `DATE` columns (all suites). Spark returns a DATE max as a Python `date`, which has no `tzinfo`, so the check failed with `'datetime.date' object has no attribute 'tzinfo'` instead of measuring anything. A date is now read as midnight UTC of that day.
+- `dq_policy.unknown_check_params` is now honored in normal `run_dq()` runs: the orchestrator passes `dq_policy` to every suite, so `error` and `ignore` no longer behave as `warn`.
+- With `unknown_check_params: error`, invalid check parameters now fail the run (`CheckConfigError`) instead of being summarized as a suite crash that evaluated to a warning.
+- Resolving deprecated nested keys (`history.tolerance_pct`, `lateness.column`) no longer mutates shared `default_checks`, so every table using them is counted in the deprecation report.
+- Check IDs of multi-instance checks stay as in 1.3.0 for unchanged configs using deprecated keys (e.g. `idempotency[key_column=id]`); IDs are built from the config as written.
+- List-valued join columns now work as documented: `gold_join_columns` / `silver_join_columns` in `reconciliation_expr` (with a length check), and `join_columns` in `cross_table_equality` and `temporal_consistency` join on every listed column.
+- `flow_completeness` with list-valued `join_columns` no longer crashes when reporting missing records (failure stats listed the key list as a single nested item).
+- Gold `coverage` accepts a single join column given as a string (`gold_join_columns: id`); it was split into characters.
+- Investigation queries of the join-based silver checks (`totals_consistency`, `cross_table_equality`, `temporal_consistency`, `flow_completeness`) are now fully rendered, with one join condition per key column; previously they returned the raw template with unresolved placeholders.
+- Profiling suggestions are valid configs for the checks they target: `_reason` / `_confidence` / `_comment` annotations are no longer reported as unknown parameters (they failed the run under `unknown_check_params: error`); the `trend` suggestion now uses the `name` + `history: {table, window, tolerance_percent}` shape; bronze `table_freshness` and `record_count_anomaly` suggestions use `max_staleness_days` and `max_deviation_percent`.
+- `trend`, and `volume` with a `name`, now find their own history: the lookup uses the persisted check ID (`trend`, or `trend[name=...]` with several instances) instead of `name`, which never matched, so these checks always passed as "insufficient history".
+- `volume` history mode works on real history: the baseline is parsed from what `volume` itself writes (`Volume OK: 123`), not from a `value=` pattern it never emitted, so a history-only `volume` no longer passes regardless of the change. Failure messages now include the current value (`Volume 4 deviation ...`) so they also feed later baselines. History values are read back exactly, including scientific notation (`1e+20`, `1e-06`), and `trend` / `volume` compare DECIMAL metrics without a type error.
+- `cross_gold` without `left_table` uses the table under validation as already filtered by `row_filter` / `partition_filter`, instead of reloading the whole table.
+- `flow_completeness` investigation queries apply `source_filter` inside a source-only subquery, so filters on join columns are no longer ambiguous.
+- `reconciliation_expr` rejects `gold_join_columns` without `silver_join_columns` (or vice versa) instead of silently comparing against all Silver rows.
+- Great Expectations converts to pandas only the columns its expectations read (column keys, `column_list`, names used in `row_condition`, and the columns of `integrity`, `no_duplicate` and `multicolumn_sum`). Before, the whole table was converted, so a timestamp past 2262-04-11 (the pandas `datetime64[ns]` limit, e.g. a `2999-12-31` "no end date" sentinel) in any column crashed the table as `engine_crash` and none of its expectations ran. A far-future timestamp in a column that is checked still crashes the table.
+- Great Expectations `engine_crash` rows are written with their `run_timestamp` and a `run_id` instead of NULL and `"None"`, so dashboards that pick the latest run by `run_timestamp` show the crash. Their `details` is a plain message (`Check error: ...`) like other rows. `data_filter` rows now carry the same `run_id` as the expectation rows of their table.
+- `record_count_anomaly` reports `Count went from 0 to N (no previous rows to compare against)` when the previous count was 0, instead of `Count deviation 0.0% exceeds ...% limit`. The check still fails.
+- Lakeview dashboard: the regression datasets (`regression_summary`, `regression_detail`) keep checks of the same `schema.table` in different catalogs (and suites) apart; the detail table shows `catalog.schema.table`. Regenerate dashboards to pick this up.
+
+### Documentation
+
+- All configuration examples use canonical check parameters (no deprecated keys, no parameters a check does not accept); the deprecated-keys tables in *Naming conventions* are complete, and the incorrect note saying `trend` keeps `tolerance_pct` was removed. `cross_table_equality` / `temporal_consistency` docs no longer advertise unsupported `left_catalog` / `right_catalog` keys.
+
+---
+
 ## [1.4.0] - 2026-10-14
 
 Check-parameter standardization: a single naming convention across every check, with a non-breaking deprecation path for the old keys.
@@ -1190,7 +1222,7 @@ silver:
     - `test_orchestrator.py`: 13 tests (9 unit + 4 integration placeholders)
     - `test_runner.py`: 7 tests (integration placeholders)
 
-- **Allure TestOps integration**:
+- **Allure test conventions**:
   - Gherkin steps format (Given/When/Then)
   - Tags: lowercase (`positive`, `negative`, `spark`)
   - Name format: `Feature > Story > Title`
