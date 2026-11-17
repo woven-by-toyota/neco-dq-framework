@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/logo.svg" alt="neco dq framework" width="600">
+  <img src="https://raw.githubusercontent.com/woven-by-toyota/neco-dq-framework/main/docs/assets/logo.svg" alt="neco dq framework" width="600">
 </p>
 
 <p align="center">
@@ -232,11 +232,11 @@ uv run pytest tests/ -v
 uv run pytest tests/ -v -m "not spark"
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide.
+See [CONTRIBUTING.md](https://github.com/woven-by-toyota/neco-dq-framework/blob/main/CONTRIBUTING.md) for the full contributor guide.
 
 ## Contributing
 
-Contributions are welcome: bug reports, feature requests, new checks, or documentation improvements. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
+Contributions are welcome: bug reports, feature requests, new checks, or documentation improvements. See [CONTRIBUTING.md](https://github.com/woven-by-toyota/neco-dq-framework/blob/main/CONTRIBUTING.md) to get started.
 
 Created and maintained by **Claudio Basilico**. Originally developed at Toyota Motor Corporation.
 
