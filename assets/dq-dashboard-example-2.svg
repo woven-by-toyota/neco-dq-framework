@@ -1,0 +1,163 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1000" viewBox="0 0 1200 1000" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <rect x="0" y="0" width="1200" height="1000" fill="#f9f9f7"/>
+  <style>
+    .ttl { fill:#52514e; font-size:13px; font-weight:600; }
+    .lbl { fill:#0b0b0b; font-size:12px; }
+    .lblw { fill:#ffffff; font-size:12px; font-weight:600; }
+    .axis { fill:#898781; font-size:12px; }
+    .kpi-label { fill:#898781; font-size:12px; }
+    .baseline { stroke:#c3c2b7; stroke-width:1; }
+    .grid { stroke:#e1e0d9; stroke-width:1; }
+  </style>
+
+  <text x="24" y="34" fill="#0b0b0b" font-size="20" font-weight="700">DQ Dashboard</text>
+  <text x="24" y="54" fill="#898781" font-size="13">Coverage, dimensions, regression and trends</text>
+
+  <!-- ===== Regression: 2 counters + detail table ===== -->
+  <rect x="24" y="72" width="182" height="54" rx="8" fill="#fcfcfb" stroke="rgba(11,11,11,0.10)"/>
+  <text x="40" y="94" class="kpi-label">New failures</text>
+  <text x="40" y="118" fill="#d03b3b" font-size="22" font-weight="700">2</text>
+  <text x="72" y="118" fill="#d03b3b" font-size="11" font-weight="600">vs prev</text>
+
+  <rect x="24" y="132" width="182" height="54" rx="8" fill="#fcfcfb" stroke="rgba(11,11,11,0.10)"/>
+  <text x="40" y="154" class="kpi-label">Recovered</text>
+  <text x="40" y="178" fill="#0ca30c" font-size="22" font-weight="700">5</text>
+  <text x="72" y="178" fill="#006300" font-size="11" font-weight="600">vs prev</text>
+
+  <rect x="214" y="72" width="962" height="114" rx="8" fill="#fcfcfb" stroke="rgba(11,11,11,0.10)"/>
+  <text x="230" y="94" class="ttl">Regression detail — new failures / recovered</text>
+  <!-- table header -->
+  <line x1="230" y1="104" x2="1160" y2="104" class="grid"/>
+  <g class="axis"><text x="230" y="122">table</text><text x="470" y="122">check</text><text x="720" y="122">dimension</text><text x="920" y="122">change</text></g>
+  <line x1="230" y1="130" x2="1160" y2="130" class="grid"/>
+  <g class="lbl">
+    <text x="230" y="150">mart.metrics</text><text x="470" y="150">referential_integrity</text><text x="720" y="150">referential</text>
+    <rect x="920" y="139" width="70" height="16" rx="3" fill="#d03b3b"/><text x="927" y="151" class="lblw" font-size="11">NEW FAIL</text>
+    <text x="230" y="172">clean.events</text><text x="470" y="172">freshness</text><text x="720" y="172">freshness</text>
+    <rect x="920" y="161" width="86" height="16" rx="3" fill="#0ca30c"/><text x="927" y="173" class="lblw" font-size="11">RECOVERED</text>
+  </g>
+
+  <!-- ===== Coverage pies (Bronze / Silver / Gold) ===== -->
+  <!-- card 1 -->
+  <rect x="24" y="200" width="376" height="240" rx="8" fill="#fcfcfb" stroke="rgba(11,11,11,0.10)"/>
+  <text x="40" y="226" class="ttl">Bronze coverage</text>
+  <g transform="translate(140,330)">
+    <!-- 2 of 3 tested = 67% ; tested blue, not tested gray, 2px surface gap -->
+    <circle r="58" fill="none" stroke="#2a78d6" stroke-width="30" stroke-dasharray="240.4 124.0" transform="rotate(-90)"/>
+    <circle r="58" fill="none" stroke="#e1e0d9" stroke-width="30" stroke-dasharray="118.0 246.4" stroke-dashoffset="-242.4" transform="rotate(-90)"/>
+    <text x="0" y="-2" text-anchor="middle" fill="#0b0b0b" font-size="24" font-weight="700">67%</text>
+    <text x="0" y="18" text-anchor="middle" fill="#898781" font-size="12">covered</text>
+  </g>
+  <g transform="translate(250,300)">
+    <rect x="0" y="0" width="12" height="12" rx="2" fill="#2a78d6"/><text x="20" y="10" class="lbl">Tested · 2</text>
+    <rect x="0" y="26" width="12" height="12" rx="2" fill="#e1e0d9"/><text x="20" y="36" class="lbl">Not tested · 1</text>
+  </g>
+
+  <!-- card 2 -->
+  <rect x="412" y="200" width="376" height="240" rx="8" fill="#fcfcfb" stroke="rgba(11,11,11,0.10)"/>
+  <text x="428" y="226" class="ttl">Silver coverage</text>
+  <g transform="translate(528,330)">
+    <!-- 3 of 4 = 75% -->
+    <circle r="58" fill="none" stroke="#2a78d6" stroke-width="30" stroke-dasharray="269.4 95.0" transform="rotate(-90)"/>
+    <circle r="58" fill="none" stroke="#e1e0d9" stroke-width="30" stroke-dasharray="89.0 275.4" stroke-dashoffset="-271.4" transform="rotate(-90)"/>
+    <text x="0" y="-2" text-anchor="middle" fill="#0b0b0b" font-size="24" font-weight="700">75%</text>
+    <text x="0" y="18" text-anchor="middle" fill="#898781" font-size="12">covered</text>
+  </g>
+  <g transform="translate(638,300)">
+    <rect x="0" y="0" width="12" height="12" rx="2" fill="#2a78d6"/><text x="20" y="10" class="lbl">Tested · 3</text>
+    <rect x="0" y="26" width="12" height="12" rx="2" fill="#e1e0d9"/><text x="20" y="36" class="lbl">Not tested · 1</text>
+  </g>
+
+  <!-- card 3 -->
+  <rect x="800" y="200" width="376" height="240" rx="8" fill="#fcfcfb" stroke="rgba(11,11,11,0.10)"/>
+  <text x="816" y="226" class="ttl">Gold coverage</text>
+  <g transform="translate(916,330)">
+    <!-- 4 of 5 = 80% -->
+    <circle r="58" fill="none" stroke="#2a78d6" stroke-width="30" stroke-dasharray="287.6 76.8" transform="rotate(-90)"/>
+    <circle r="58" fill="none" stroke="#e1e0d9" stroke-width="30" stroke-dasharray="70.8 293.6" stroke-dashoffset="-289.6" transform="rotate(-90)"/>
+    <text x="0" y="-2" text-anchor="middle" fill="#0b0b0b" font-size="24" font-weight="700">80%</text>
+    <text x="0" y="18" text-anchor="middle" fill="#898781" font-size="12">covered</text>
+  </g>
+  <g transform="translate(1026,300)">
+    <rect x="0" y="0" width="12" height="12" rx="2" fill="#2a78d6"/><text x="20" y="10" class="lbl">Tested · 4</text>
+    <rect x="0" y="26" width="12" height="12" rx="2" fill="#e1e0d9"/><text x="20" y="36" class="lbl">Not tested · 1</text>
+  </g>
+
+  <!-- ===== DQ Dimension Matrix ===== -->
+  <rect x="24" y="452" width="1152" height="230" rx="8" fill="#fcfcfb" stroke="rgba(11,11,11,0.10)"/>
+  <text x="40" y="478" class="ttl">DQ dimension matrix — by table</text>
+  <text x="40" y="496" class="axis">Pass = ✓ · a number is failed checks in that dimension</text>
+  <!-- columns -->
+  <g class="axis" text-anchor="middle">
+    <text x="360" y="524">completeness</text><text x="510" y="524">uniqueness</text>
+    <text x="660" y="524">validity</text><text x="810" y="524">freshness</text><text x="960" y="524">referential</text>
+  </g>
+  <!-- rows: cell w=140 h=28 gap2 ; col x = 290,440,590,740,890 (center 360...960) -->
+  <g font-size="12">
+    <!-- helpers: pass tint #e6f4e6 with ✓ #0ca30c ; fail tint #fbe6e6 with count #d03b3b -->
+    <!-- row orders -->
+    <text x="60" y="548" class="lbl">mart.orders</text>
+    <rect x="290" y="532" width="140" height="28" rx="3" fill="#fbe6e6"/><text x="360" y="551" text-anchor="middle" fill="#d03b3b" font-weight="600">1</text>
+    <rect x="440" y="532" width="140" height="28" rx="3" fill="#e6f4e6"/><text x="510" y="551" text-anchor="middle" fill="#0ca30c" font-weight="700">✓</text>
+    <rect x="590" y="532" width="140" height="28" rx="3" fill="#e6f4e6"/><text x="660" y="551" text-anchor="middle" fill="#0ca30c" font-weight="700">✓</text>
+    <rect x="740" y="532" width="140" height="28" rx="3" fill="#e6f4e6"/><text x="810" y="551" text-anchor="middle" fill="#0ca30c" font-weight="700">✓</text>
+    <rect x="890" y="532" width="140" height="28" rx="3" fill="#e6f4e6"/><text x="960" y="551" text-anchor="middle" fill="#0ca30c" font-weight="700">✓</text>
+    <!-- row events -->
+    <text x="60" y="580" class="lbl">clean.events</text>
+    <rect x="290" y="564" width="140" height="28" rx="3" fill="#e6f4e6"/><text x="360" y="583" text-anchor="middle" fill="#0ca30c" font-weight="700">✓</text>
+    <rect x="440" y="564" width="140" height="28" rx="3" fill="#e6f4e6"/><text x="510" y="583" text-anchor="middle" fill="#0ca30c" font-weight="700">✓</text>
+    <rect x="590" y="564" width="140" height="28" rx="3" fill="#e6f4e6"/><text x="660" y="583" text-anchor="middle" fill="#0ca30c" font-weight="700">✓</text>
+    <rect x="740" y="564" width="140" height="28" rx="3" fill="#fbe6e6"/><text x="810" y="583" text-anchor="middle" fill="#d03b3b" font-weight="600">2</text>
+    <rect x="890" y="564" width="140" height="28" rx="3" fill="#e6f4e6"/><text x="960" y="583" text-anchor="middle" fill="#0ca30c" font-weight="700">✓</text>
+    <!-- row metrics -->
+    <text x="60" y="612" class="lbl">mart.metrics</text>
+    <rect x="290" y="596" width="140" height="28" rx="3" fill="#e6f4e6"/><text x="360" y="615" text-anchor="middle" fill="#0ca30c" font-weight="700">✓</text>
+    <rect x="440" y="596" width="140" height="28" rx="3" fill="#e6f4e6"/><text x="510" y="615" text-anchor="middle" fill="#0ca30c" font-weight="700">✓</text>
+    <rect x="590" y="596" width="140" height="28" rx="3" fill="#e6f4e6"/><text x="660" y="615" text-anchor="middle" fill="#0ca30c" font-weight="700">✓</text>
+    <rect x="740" y="596" width="140" height="28" rx="3" fill="#e6f4e6"/><text x="810" y="615" text-anchor="middle" fill="#0ca30c" font-weight="700">✓</text>
+    <rect x="890" y="596" width="140" height="28" rx="3" fill="#fbe6e6"/><text x="960" y="615" text-anchor="middle" fill="#d03b3b" font-weight="600">3</text>
+    <!-- row summary -->
+    <text x="60" y="644" class="lbl">mart.summary</text>
+    <rect x="290" y="628" width="140" height="28" rx="3" fill="#e6f4e6"/><text x="360" y="647" text-anchor="middle" fill="#0ca30c" font-weight="700">✓</text>
+    <rect x="440" y="628" width="140" height="28" rx="3" fill="#e6f4e6"/><text x="510" y="647" text-anchor="middle" fill="#0ca30c" font-weight="700">✓</text>
+    <rect x="590" y="628" width="140" height="28" rx="3" fill="#e6f4e6"/><text x="660" y="647" text-anchor="middle" fill="#0ca30c" font-weight="700">✓</text>
+    <rect x="740" y="628" width="140" height="28" rx="3" fill="#fbe6e6"/><text x="810" y="647" text-anchor="middle" fill="#d03b3b" font-weight="600">2</text>
+    <rect x="890" y="628" width="140" height="28" rx="3" fill="#e6f4e6"/><text x="960" y="647" text-anchor="middle" fill="#0ca30c" font-weight="700">✓</text>
+  </g>
+
+  <!-- ===== Trends (3 small multiples) ===== -->
+  <!-- Pass Rate Trend -->
+  <rect x="24" y="694" width="376" height="284" rx="8" fill="#fcfcfb" stroke="rgba(11,11,11,0.10)"/>
+  <text x="40" y="720" class="ttl">Pass rate trend</text>
+  <!-- plot: x 64..380, y 760..930 ; y 90..100 -->
+  <line x1="64" y1="930" x2="380" y2="930" class="baseline"/>
+  <text x="52" y="764" text-anchor="end" class="axis">100</text>
+  <text x="52" y="934" text-anchor="end" class="axis">90</text>
+  <polyline fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"
+    points="64,896 116,861 169,844 222,800 275,809 327,775 380,769"/>
+  <g fill="#2a78d6"><circle cx="64" cy="896" r="4"/><circle cx="116" cy="861" r="4"/><circle cx="169" cy="844" r="4"/><circle cx="222" cy="800" r="4"/><circle cx="275" cy="809" r="4"/><circle cx="327" cy="775" r="4"/><circle cx="380" cy="769" r="5"/></g>
+  <text x="376" y="758" text-anchor="end" class="lbl" font-weight="600">96.4%</text>
+
+  <!-- Blocking Failures Trend -->
+  <rect x="412" y="694" width="376" height="284" rx="8" fill="#fcfcfb" stroke="rgba(11,11,11,0.10)"/>
+  <text x="428" y="720" class="ttl">Blocking failures trend</text>
+  <line x1="452" y1="930" x2="768" y2="930" class="baseline"/>
+  <text x="440" y="764" text-anchor="end" class="axis">6</text>
+  <text x="440" y="934" text-anchor="end" class="axis">0</text>
+  <!-- values 5,4,4,3,2,3,3 over y 0..6 mapped to 930..760 (28.3px/unit) -->
+  <polyline fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"
+    points="452,788 505,817 558,817 611,845 663,873 716,845 768,845"/>
+  <g fill="#2a78d6"><circle cx="452" cy="788" r="4"/><circle cx="505" cy="817" r="4"/><circle cx="558" cy="817" r="4"/><circle cx="611" cy="845" r="4"/><circle cx="663" cy="873" r="4"/><circle cx="716" cy="845" r="4"/><circle cx="768" cy="845" r="5"/></g>
+  <text x="764" y="835" text-anchor="end" class="lbl" font-weight="600">3</text>
+
+  <!-- Execution Duration Trend -->
+  <rect x="800" y="694" width="376" height="284" rx="8" fill="#fcfcfb" stroke="rgba(11,11,11,0.10)"/>
+  <text x="816" y="720" class="ttl">Execution duration trend</text>
+  <text x="816" y="738" class="axis">ms per run</text>
+  <line x1="840" y1="930" x2="1156" y2="930" class="baseline"/>
+  <text x="828" y="770" text-anchor="end" class="axis">high</text>
+  <text x="828" y="934" text-anchor="end" class="axis">low</text>
+  <polyline fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"
+    points="840,900 893,880 946,888 999,850 1051,845 1104,820 1156,830"/>
+  <g fill="#2a78d6"><circle cx="840" cy="900" r="4"/><circle cx="893" cy="880" r="4"/><circle cx="946" cy="888" r="4"/><circle cx="999" cy="850" r="4"/><circle cx="1051" cy="845" r="4"/><circle cx="1104" cy="820" r="4"/><circle cx="1156" cy="830" r="5"/></g>
+</svg>
