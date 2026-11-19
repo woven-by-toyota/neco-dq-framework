@@ -40,6 +40,7 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/woven-by-toyota/neco-dq-framework"
 Repository = "https://github.com/woven-by-toyota/neco-dq-framework"
+Documentation = "https://woven-by-toyota.github.io/neco-dq-framework/"
 Issues = "https://github.com/woven-by-toyota/neco-dq-framework/issues"
 
 [tool.setuptools]
